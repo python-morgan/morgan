@@ -23,6 +23,7 @@ import packaging.version
 
 from morgan import configurator, metadata, server
 from morgan.__about__ import __version__
+from morgan.registry import LocalRegistry, Registry
 from morgan.utils import (
     Cache,
     ListExtendingOrderedDict,
@@ -92,6 +93,7 @@ class Mirrorer:
                     )
 
         self._processed_pkgs = Cache()
+        self.target_registry: Registry = LocalRegistry(self._hash_file, self.index_path)
 
     def mirror(self, requirement_string: str):
         """
@@ -582,7 +584,14 @@ class Mirrorer:
             else next(iter(fileinfo["hashes"]))
         )
 
-        self._download_file(fileinfo, filepath, hashalg)
+        # Check if package already exists in target registry
+        if not self.target_registry.has_package(
+            fileinfo["filename"],
+            requirement.name,
+            hashalg,
+            fileinfo["hashes"][hashalg],
+        ):
+            self._download_file(fileinfo, filepath, hashalg)
 
         md = self._extract_metadata(filepath)
 
@@ -619,8 +628,6 @@ class Mirrorer:
 
         exphash = fileinfo["hashes"][hashalg]
 
-        os.makedirs(os.path.dirname(target), exist_ok=True)
-
         # if target already exists, verify its hash and only download if
         # there's a mismatch
         if os.path.exists(target):
@@ -629,6 +636,7 @@ class Mirrorer:
                 touch_file(target, fileinfo)
                 return True
 
+        os.makedirs(os.path.dirname(target), exist_ok=True)
         print("\t{}...".format(fileinfo["url"]), end=" ")
         with urllib.request.urlopen(  # noqa: S310
             fileinfo["url"],
