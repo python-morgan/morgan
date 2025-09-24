@@ -23,7 +23,7 @@ import packaging.version
 
 from morgan import configurator, metadata, server
 from morgan.__about__ import __version__
-from morgan.registry import LocalRegistry, Registry
+from morgan.registry import GitLabRegistry, LocalRegistry, Registry
 from morgan.utils import (
     Cache,
     ListExtendingOrderedDict,
@@ -93,7 +93,7 @@ class Mirrorer:
                     )
 
         self._processed_pkgs = Cache()
-        self.target_registry: Registry = LocalRegistry(self._hash_file, self.index_path)
+        self.target_registry: Registry = self._find_target_registry(args)
 
     def mirror(self, requirement_string: str):
         """
@@ -612,6 +612,20 @@ class Mirrorer:
             }
         return depdict
 
+    def _find_target_registry(self, args: argparse.Namespace) -> Registry:
+        if args.target_url is None:
+            return LocalRegistry(self._hash_file, self.index_path)
+
+        if args.target_gitlab_project:
+            return GitLabRegistry(
+                args.target_url,
+                args.target_gitlab_project,
+                args.target_token,
+            )
+
+        msg = "Target registry is not supported"
+        raise NotImplementedError(msg)
+
     def _download_file(
         self,
         fileinfo: dict,
@@ -822,6 +836,29 @@ def main():  # noqa: C901
         help="Base URL of the Python Package Index",
     )
     parser.add_argument(
+        "-t",
+        "--target-url",
+        dest="target_url",
+        default=None,
+        type=my_url,
+        help='Base URL of the target repository. For example, "https://gitlab.example.com". If not specified, defaults to the local Package Index.',
+    )
+    parser.add_argument(
+        "-T",
+        "--target-auth-bearer",
+        dest="target_token",
+        default=None,
+        type=str,
+        help="Authorization Token for the target repository.",
+    )
+    parser.add_argument(
+        "--target-gitlab-project",
+        dest="target_gitlab_project",
+        default=None,
+        type=str,
+        help="The Gitlab Project that will be used as a target repository.",
+    )
+    parser.add_argument(
         "-c",
         "--config",
         dest="config",
@@ -881,6 +918,10 @@ def main():  # noqa: C901
     )
 
     args = parser.parse_args()
+
+    # Validate that target-gitlab-project requires target-url
+    if args.target_gitlab_project and not args.target_url:
+        parser.error("--target-gitlab-project requires --target-url to be specified")
 
     # These commands do not require a configuration file and therefore should
     # be executed prior to sanity checking the configuration
