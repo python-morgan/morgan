@@ -39,6 +39,7 @@ class TestCalculateScoresForWheel:
             mirror_all_versions=False,
             package_type_regex=r"(whl|zip|tar\.gz)",
             mirror_all_wheels=True,
+            target_url=None,
         )
         return Mirrorer(args)
 

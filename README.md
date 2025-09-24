@@ -42,6 +42,7 @@ the mirror instead of pypi.org, which they can't access anyway.
 - Runs under **Python 3.7 and up** (both server and mirrorer).
 - Package index is a **simple directory tree** that can be easily archived, copied,
   rsynced, etc.
+- Alternatively to the directory index, a **GitLab package registry** can be used as a target index.
 - Package index contains a **configuration file** that lists **markers** for
   different client **environments** and a list of **package requirement strings** as per [PEP 508](https://peps.python.org/pep-0508/).
 - Mirrorer automatically and **recursively mirrors dependencies** of all direct
