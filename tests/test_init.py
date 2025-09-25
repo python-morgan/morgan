@@ -106,6 +106,7 @@ class TestMirrorer:
             package_type_regex="(whl|zip|tar.gz)",
             mirror_all_wheels=False,
             target_url=None,
+            use_pypi_metadata=False,
         )
 
         mirrorer = Mirrorer(args)
@@ -127,6 +128,7 @@ class TestMirrorer:
             package_type_regex="(whl|zip|tar.gz)",
             mirror_all_wheels=False,
             target_url=None,
+            use_pypi_metadata=False,
         )
         mirrorer = Mirrorer(args)
 
@@ -154,6 +156,7 @@ class TestMirrorer:
             package_type_regex="(whl|zip|tar.gz)",
             mirror_all_wheels=False,
             target_url=None,
+            use_pypi_metadata=False,
         )
         mirrorer = Mirrorer(args)
 
@@ -205,6 +208,7 @@ class TestFilterFiles:
                 package_type_regex=r"(whl|zip|tar\.gz)",
                 mirror_all_wheels=mirror_all_wheels,
                 target_url=None,
+                use_pypi_metadata=False,
             )
             return Mirrorer(args)
 
@@ -607,6 +611,7 @@ class TestMirrorDependencyErrors:
             package_type_regex=r"(whl|zip|tar\.gz)",
             mirror_all_wheels=False,
             target_url=None,
+            use_pypi_metadata=False,
         )
         return Mirrorer(args)
 
@@ -708,6 +713,7 @@ class TestDownloadFile:
             package_type_regex="(whl|zip|tar.gz)",
             mirror_all_wheels=False,
             target_url=None,
+            use_pypi_metadata=False,
         )
         return Mirrorer(args)
 

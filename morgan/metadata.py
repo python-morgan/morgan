@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import email.parser
+import gzip
+import json
 import re
+import urllib.error
+import urllib.request
 from typing import IO, Any, Callable, Iterable
 
 import tomli
@@ -344,3 +348,83 @@ class MetadataParser:
     def _add_build_requirements(self, reqs):
         msg = "Setuptools build requirements not supported"
         raise NotImplementedError(msg)
+
+
+class PyPIMetadataParser(MetadataParser):
+    """Metadata Parser for PyPI's JSON API.
+
+    This class extends MetadataParser to parse metadata from PyPI's JSON API
+    without needing an opener/filename for local files.
+    """
+
+    def __init__(self, package_name: str, version_str: str):
+        super().__init__(f"pypi:{package_name}-{version_str}")
+        self.package_name = package_name
+        self.version_str = version_str
+
+    def parse(
+        self,
+        opener: Callable[[str], IO[bytes] | None],
+        filename: str,
+    ) -> None:
+        msg = "Use parse_pypi() instead of parse() for PyPIMetadataParser"
+        raise NotImplementedError(msg)
+
+    def parse_pypi(self) -> MetadataParser:
+        """Extract package metadata from PyPI's JSON API.
+
+        Returns:
+            A MetadataParser object populated with metadata from PyPI.
+
+        Raises:
+            urllib.error.HTTPError: If the API request fails.
+            ValueError: If the API response is invalid or cannot be parsed.
+        """
+
+        url = f"https://pypi.org/pypi/{self.package_name}/{self.version_str}/json"
+
+        request = urllib.request.Request(  # noqa: S310
+            url,
+            headers={
+                "Accept": "application/json",
+                "Accept-Encoding": "gzip",
+            },
+        )
+
+        with urllib.request.urlopen(request) as response:  # noqa: S310
+            # Check if response is gzip-encoded
+            if response.headers.get("Content-Encoding") == "gzip":
+                with gzip.GzipFile(fileobj=response) as gzip_response:
+                    data = json.load(gzip_response)
+            else:
+                data = json.load(response)
+
+        received_version = data["info"].get("version")
+        # PyPI returns the version as uploaded (e.g. "0.6c1"), which may differ
+        # from the PEP 440 normalized form in version_str (e.g. "0.6rc1")
+        if received_version is None or Version(received_version) != Version(
+            self.version_str,
+        ):
+            msg = f"Version mismatch: requested {self.version_str}, got {received_version}"
+            raise ValueError(msg)
+
+        # Create and populate the metadata parser
+        self.name = canonicalize_name(data["info"]["name"])
+        self.version = Version(received_version)
+
+        # Extract Python requirement
+        requires_python = data["info"].get("requires_python")
+        if requires_python:
+            self.python_requirement = SpecifierSet(requires_python)
+
+        provides_extra = data["info"].get("provides_extra")
+        if provides_extra:
+            self.extras_provided |= set(provides_extra)
+
+        # Parse dependencies
+        requires_dist = data["info"].get("requires_dist")
+        if requires_dist is not None:
+            for requirement_str in requires_dist:
+                self._parse_requires_dist(requirement_str)
+
+        return self

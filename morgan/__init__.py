@@ -9,6 +9,7 @@ import os.path
 import re
 import tarfile
 import traceback
+import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
@@ -94,6 +95,7 @@ class Mirrorer:
 
         self._processed_pkgs = Cache()
         self.target_registry: Registry = self._find_target_registry(args)
+        self.use_pypi_metadata: bool = args.use_pypi_metadata or False
 
     def mirror(self, requirement_string: str):
         """
@@ -593,9 +595,15 @@ class Mirrorer:
         ):
             self._download_file(fileinfo, filepath, hashalg)
 
-        md = self._extract_metadata(filepath)
+        if self.use_pypi_metadata:
+            pkg_metadata = self._extract_metadata_from_pypi(
+                requirement.name,
+                fileinfo["version"],
+            )
+        else:
+            pkg_metadata = self._extract_metadata_from_file(filepath)
 
-        deps = md.dependencies(requirement.extras, self.envs.values())
+        deps = pkg_metadata.dependencies(requirement.extras, self.envs.values())
         if deps is None:
             return None
 
@@ -685,7 +693,7 @@ class Mirrorer:
 
         return truehash.hexdigest()
 
-    def _extract_metadata(
+    def _extract_metadata_from_file(
         self,
         filepath: str,
     ) -> metadata.MetadataParser:
@@ -719,6 +727,30 @@ class Mirrorer:
         archive.close()
 
         return md
+
+    def _extract_metadata_from_pypi(
+        self,
+        package: str,
+        version: packaging.version.Version,
+    ) -> metadata.MetadataParser:
+        """Extract package metadata from PyPI's JSON API.
+
+        Args:
+            package: The name of the package.
+            version: The version of the package.
+
+        Returns:
+            A MetadataParser object filled with metadata from PyPI.
+
+        Raises:
+            urllib.error.HTTPError: If there's an error fetching metadata from PyPI.
+        """
+        pkg_metadata = metadata.PyPIMetadataParser(package, str(version))
+        try:
+            return pkg_metadata.parse_pypi()
+        except urllib.error.HTTPError as e:
+            print(f"\tError fetching metadata from PyPI: {e}")
+            raise
 
 
 def parse_interpreter(inp: str) -> tuple[str, str | None]:
@@ -900,6 +932,18 @@ def main():  # noqa: C901
             "(default: fetch only the wheel for latest compatible Python version)"
         ),
     )
+    parser.add_argument(
+        "--use-pypi-metadata",
+        dest="use_pypi_metadata",
+        action="store_true",
+        help=(
+            "Use PyPI's JSON API to fetch package metadata instead of relying on "
+            "downloaded files in the package-index. "
+            "Enabling this option can result in fewer dependencies being pulled in, "
+            "as some dependencies declared in pyproject.toml (e.g. build-system "
+            "dependencies like poetry) are not considered package dependencies by PyPI."
+        ),
+    )
 
     server.add_arguments(parser)
     configurator.add_arguments(parser)
@@ -922,6 +966,13 @@ def main():  # noqa: C901
     # Validate that target-gitlab-project requires target-url
     if args.target_gitlab_project and not args.target_url:
         parser.error("--target-gitlab-project requires --target-url to be specified")
+
+    if args.target_gitlab_project and not args.use_pypi_metadata:
+        parser.error("--target-gitlab-project requires --use-pypi-metadata")
+
+    # GitLab is the only supported remote target registry so far
+    if args.target_url and not args.target_gitlab_project:
+        parser.error("--target-url requires --target-gitlab-project")
 
     # These commands do not require a configuration file and therefore should
     # be executed prior to sanity checking the configuration

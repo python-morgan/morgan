@@ -40,6 +40,7 @@ class TestCalculateScoresForWheel:
             package_type_regex=r"(whl|zip|tar\.gz)",
             mirror_all_wheels=True,
             target_url=None,
+            use_pypi_metadata=False,
         )
         return Mirrorer(args)
 
