@@ -286,24 +286,25 @@ class MetadataParser:
         requires_dist = data.get_all("Requires-Dist")
         if requires_dist is not None:
             for requirement_str in requires_dist:
-                req = Requirement(requirement_str)
-                extra = None
-                if req.marker is not None:
-                    # ruff: noqa: SLF001
-                    for marker in req.marker._markers:
-                        if (
-                            isinstance(marker[0], MarkerVariable)
-                            and marker[0].value == "extra"
-                        ):
-                            extra = marker[2].value
-                            break
+                self._parse_requires_dist(requirement_str)
 
-                if extra:
-                    if extra not in self.optional_dependencies:
-                        self.optional_dependencies[extra] = set()
-                    self.optional_dependencies[extra].add(req)
-                else:
-                    self.core_dependencies.add(req)
+    def _parse_requires_dist(self, requirement_str: str):
+        req = Requirement(requirement_str)
+        extra = None
+        if req.marker is not None:
+            # ruff: noqa: SLF001
+            for marker in req.marker._markers:
+                if isinstance(marker[0], MarkerVariable) and marker[0].value == "extra":
+                    extra = marker[2].value
+                    break
+
+        if not extra:
+            self.core_dependencies.add(req)
+            return
+
+        if extra not in self.optional_dependencies:
+            self.optional_dependencies[extra] = set()
+        self.optional_dependencies[extra].add(req)
 
     def _parse_metadata_11(self, data):
         requires = data.get_all("Requires")

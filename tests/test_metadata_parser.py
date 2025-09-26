@@ -187,3 +187,46 @@ pytest>=6.0.0
 
         deps = parser.dependencies(extras, [{"python_version": python_version}])
         assert len(deps) == expected_count
+
+
+class TestMetadataParserRequiresDist:
+    @pytest.fixture
+    def parser(self):
+        """Basic parser instance for testing"""
+        return MetadataParser("example-package-1.0.0.tar.gz")
+
+    def test_parse_requires_dist_simple(self, parser):
+        """Test parsing a simple requirement without extras or markers"""
+        # pylint: disable=W0212
+        parser._parse_requires_dist("requests>=2.0.0")  # noqa: SLF001
+
+        assert len(parser.core_dependencies) == 1
+        req = parser.core_dependencies.pop()
+        assert req.name == "requests"
+        assert str(req.specifier) == ">=2.0.0"
+        assert not req.extras
+        assert req.marker is None
+
+    def test_parse_requires_dist_with_env_marker(self, parser):
+        """Test parsing a requirement with environment marker (non-extra)"""
+        # pylint: disable=W0212
+        parser._parse_requires_dist("numpy>=1.20.0; python_version >= '3.8'")  # noqa: SLF001
+
+        assert len(parser.core_dependencies) == 1
+        req = parser.core_dependencies.pop()
+        assert req.name == "numpy"
+        assert req.marker is not None
+
+    def test_parse_requires_dist_with_extra(self, parser):
+        """Test parsing a requirement with an extra marker"""
+        # pylint: disable=W0212
+        parser._parse_requires_dist('flask>=2.0.0; extra == "web"')  # noqa: SLF001
+
+        assert len(parser.core_dependencies) == 0
+        assert "web" in parser.optional_dependencies
+        assert len(parser.optional_dependencies["web"]) == 1
+
+        req = parser.optional_dependencies["web"].pop()
+        assert req.name == "flask"
+        assert str(req.specifier) == ">=2.0.0"
+        assert req.marker is not None
