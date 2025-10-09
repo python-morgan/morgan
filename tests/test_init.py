@@ -94,6 +94,7 @@ class TestMirrorer:
             config=os.path.join(temp_index_path, "morgan.ini"),
             mirror_all_versions=False,
             package_type_regex="(whl|zip|tar.gz)",
+            mirror_all_wheels=False,
         )
 
         mirrorer = Mirrorer(args)
@@ -113,6 +114,7 @@ class TestMirrorer:
             config=os.path.join(temp_index_path, "morgan.ini"),
             mirror_all_versions=False,
             package_type_regex="(whl|zip|tar.gz)",
+            mirror_all_wheels=False,
         )
         mirrorer = Mirrorer(args)
 
@@ -138,6 +140,7 @@ class TestMirrorer:
             config=os.path.join(temp_index_path, "morgan.ini"),
             mirror_all_versions=False,
             package_type_regex="(whl|zip|tar.gz)",
+            mirror_all_wheels=False,
         )
         mirrorer = Mirrorer(args)
 
@@ -180,14 +183,14 @@ class TestFilterFiles:
     @pytest.fixture
     def make_mirrorer(self, temp_index_path):
         # Return a function that creates mirrorer instances
-        def _make_mirrorer(mirror_all_versions):
+        def _make_mirrorer(mirror_all_versions, mirror_all_wheels=False):
             args = argparse.Namespace(
                 index_path=temp_index_path,
                 index_url="https://example.com/simple",
                 config=os.path.join(temp_index_path, "morgan.ini"),
                 mirror_all_versions=mirror_all_versions,
                 package_type_regex=r"(whl|zip|tar\.gz)",
-                mirror_all_wheels=False,
+                mirror_all_wheels=mirror_all_wheels,
             )
             return Mirrorer(args)
 
@@ -436,6 +439,41 @@ class TestFilterFiles:
         )
 
         assert set(self.extract_versions(filtered_files)) == set(expected_versions)
+
+    @pytest.mark.parametrize(
+        ("version_spec", "expected_versions", "number_of_wheels"),
+        [
+            (">=1.5.0", ["1.6.0", "1.5.2", "1.5.1"], 5),
+            (">=1.5.0,<1.6.0", ["1.5.2", "1.5.1"], 4),
+            ("==1.5.1", ["1.5.1"], 2),
+        ],
+        ids=["basic_range", "complex_range", "exact_match"],
+    )
+    def test_filter_files_with_best_wheel_mirrored(
+        self,
+        make_mirrorer,
+        sample_wheels,
+        version_spec,
+        expected_versions,
+        number_of_wheels,
+    ):
+        """Test that file filtering correctly handles different version specifications."""
+        mirrorer = make_mirrorer(mirror_all_versions=True, mirror_all_wheels=True)
+        requirement = packaging.requirements.Requirement(
+            f"sample_package{version_spec}",
+        )
+
+        # pylint: disable=W0212
+        filtered_files = mirrorer._filter_files(  # noqa: SLF001
+            requirement=requirement,
+            required_by=None,
+            files=sample_wheels,
+        )
+
+        assert set(self.extract_versions(filtered_files)) == set(expected_versions)
+        assert len(filtered_files) == number_of_wheels, (
+            f"Expected {number_of_wheels} wheel(s) to be selected, but got {len(filtered_files)}"
+        )
 
     def test_filter_files_selects_latest_compatible_version_of_wheel_and_sdist(
         self,
