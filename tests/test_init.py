@@ -4,6 +4,7 @@ import hashlib
 import os
 
 import packaging.requirements
+import packaging.version
 import pytest
 
 from morgan import PYPI_ADDRESS, Mirrorer, parse_interpreter, parse_requirement, server
@@ -184,13 +185,14 @@ class TestFilterFiles:
                 config=os.path.join(temp_index_path, "morgan.ini"),
                 mirror_all_versions=mirror_all_versions,
                 package_type_regex=r"(whl|zip|tar\.gz)",
+                mirror_all_wheels=False,
             )
             return Mirrorer(args)
 
         return _make_mirrorer
 
     @staticmethod
-    def make_file(filename, **overrides):
+    def make_file(filename, overrides=None):
         fileinfo = {
             "filename": filename,
             "hashes": {
@@ -198,7 +200,8 @@ class TestFilterFiles:
             },
             "url": f"https://example.com/{filename}",
         }
-        fileinfo.update(overrides)
+        if overrides:
+            fileinfo.update(overrides)
         return fileinfo
 
     @pytest.fixture
@@ -209,6 +212,46 @@ class TestFilterFiles:
             self.make_file("sample_package-1.5.1.tar.gz"),
             self.make_file("sample_package-1.4.9.tar.gz"),
         ]
+
+    @pytest.fixture
+    def sample_package_files(self):
+        """Fixture providing v2.0.0 (incompatible) and v1.0.0 (compatible) files."""
+        # Version 2.0.0 files - NOT compatible (requires Python 3.11+, but env is 3.10)
+        v2_whl = self.make_file(
+            "sample_package-2.0.0-py3-none-any.whl",
+            {
+                "version": packaging.version.Version("2.0.0"),
+                "is_wheel": True,
+                "requires-python": ">=3.11",
+            },
+        )
+        v2_tar = self.make_file(
+            "sample_package-2.0.0.tar.gz",
+            {
+                "version": packaging.version.Version("2.0.0"),
+                "is_wheel": False,
+                "requires-python": ">=3.11",
+            },
+        )
+
+        # Version 1.0.0 files - Compatible (works with Python 3.9+, and env is 3.10)
+        v1_whl = self.make_file(
+            "sample_package-1.0.0-py3-none-any.whl",
+            {
+                "version": packaging.version.Version("1.0.0"),
+                "is_wheel": True,
+                "requires-python": ">=3.9",
+            },
+        )
+        v1_tar = self.make_file(
+            "sample_package-1.0.0.tar.gz",
+            {
+                "version": packaging.version.Version("1.0.0"),
+                "is_wheel": False,
+                "requires-python": ">=3.9",
+            },
+        )
+        return v1_whl, v1_tar, v2_whl, v2_tar
 
     @staticmethod
     def extract_versions(files):
@@ -282,3 +325,77 @@ class TestFilterFiles:
         )
 
         assert self.extract_versions(filtered_files) == expected_versions
+
+    def test_filter_files_selects_latest_compatible_version_of_wheel_and_sdist(
+        self,
+        make_mirrorer,
+        sample_package_files,
+    ):
+        """Check that no incompatible wheel or sdist is being mirrored when multiple versions are available."""
+        mirrorer = make_mirrorer(mirror_all_versions=False)
+        requirement = packaging.requirements.Requirement("sample_package>=1.0")
+
+        files = sample_package_files
+
+        # pylint: disable=W0212
+        filtered_files = mirrorer._filter_files(  # noqa: SLF001
+            requirement=requirement,
+            required_by=None,
+            files=files,
+        )
+
+        filenames = {f["filename"] for f in filtered_files}
+        assert {
+            "sample_package-1.0.0-py3-none-any.whl",
+            "sample_package-1.0.0.tar.gz",
+        } == set(filenames), f"Wrong packages selected. Got: {filenames}"
+
+    def test_filter_files_selects_latest_compatible_version_of_wheel_only(
+        self,
+        make_mirrorer,
+        sample_package_files,
+    ):
+        """Check that no incompatible wheel or sdist is being mirrored when multiple versions are available."""
+        mirrorer = make_mirrorer(mirror_all_versions=False)
+
+        v1_whl, _, v2_whl, v2_tar = sample_package_files
+
+        files = [v1_whl, v2_whl, v2_tar]
+        requirement = packaging.requirements.Requirement("sample_package>=1.0")
+
+        # pylint: disable=W0212
+        filtered_files = mirrorer._filter_files(  # noqa: SLF001
+            requirement=requirement,
+            required_by=None,
+            files=files,
+        )
+
+        filenames = {f["filename"] for f in filtered_files}
+        assert {
+            "sample_package-1.0.0-py3-none-any.whl",
+        } == set(filenames), f"Wrong packages selected. Got: {filenames}"
+
+    def test_filter_files_selects_latest_compatible_version_of_sdist_only(
+        self,
+        make_mirrorer,
+        sample_package_files,
+    ):
+        """Check that no incompatible wheel or sdist is being mirrored when multiple versions are available."""
+        mirrorer = make_mirrorer(mirror_all_versions=False)
+
+        _, v1_tar, v2_whl, v2_tar = sample_package_files
+
+        files = [v1_tar, v2_whl, v2_tar]
+        requirement = packaging.requirements.Requirement("sample_package>=1.0")
+
+        # pylint: disable=W0212
+        filtered_files = mirrorer._filter_files(  # noqa: SLF001
+            requirement=requirement,
+            required_by=None,
+            files=files,
+        )
+
+        filenames = {f["filename"] for f in filtered_files}
+        assert {
+            "sample_package-1.0.0.tar.gz",
+        } == set(filenames), f"Wrong packages selected. Got: {filenames}"
