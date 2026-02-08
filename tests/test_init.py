@@ -1,5 +1,6 @@
 # pylint: disable=missing-function-docstring,missing-class-docstring,missing-module-docstring
 import argparse
+import contextlib
 import hashlib
 import os
 import urllib.error
@@ -289,18 +290,16 @@ class TestFilterFiles:
         mirrorer = make_mirrorer(mirror_all_versions=False)
         required_by = packaging.requirements.Requirement("pyjwt[crypto]==2.10.1")
         requirement = packaging.requirements.Requirement(
-            'cryptography>=3.4.0; extra == "crypto"'
+            'cryptography>=3.4.0; extra == "crypto"',
         )
 
         res = {}
-        try:
+        with contextlib.suppress(urllib.error.HTTPError):
             # if skipping then None
             res = mirrorer._mirror(  # noqa: SLF001
                 requirement=requirement,
                 required_by=required_by,
             )
-        except urllib.error.HTTPError:
             # if not skipping then HTTPError
-            pass
 
         assert res is not None
