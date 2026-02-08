@@ -289,7 +289,7 @@ class TestFilterFiles:
         mirrorer = make_mirrorer(mirror_all_versions=False)
         required_by = packaging.requirements.Requirement("pyjwt[crypto]==2.10.1")
         requirement = packaging.requirements.Requirement(
-            "cryptography>=3.4.0; extra == \"crypto\""
+            'cryptography>=3.4.0; extra == "crypto"'
         )
 
         res = {}
