@@ -295,7 +295,7 @@ class TestFilterFiles:
         res = {}
         try:
             # if skipping then None
-            res = mirrorer._mirror(  # pylint: disable=protected-access
+            res = mirrorer._mirror(  # noqa: SLF001
                 requirement=requirement,
                 required_by=required_by,
             )
