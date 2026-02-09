@@ -228,10 +228,36 @@ class Mirrorer:
         required_by: packaging.requirements.Requirement | None,
         files: Iterable[dict],
     ) -> list[dict] | None:
+        files = self._parse_and_filter_files_by_extension(files)
+        files = self._parse_version_and_tags_in_files(files)
+        files = self._filter_files_for_valid_versions(files)
+
+        if not files:
+            print(f"Skipping {requirement}, no valid version matches requirement")
+            return None
+
+        self._sort_files_by_version(files)
+        files = self._filter_by_requirement(files, requirement)
+
+        if not files:
+            print(f"Skipping {requirement}, no version matches requirement")
+            return None
+
+        files = self._filter_files_by_environment(files)
+
+        if not files:
+            print(f"Skipping {requirement}, no file matches environments")
+            return None
+
+        return self._filter_files_by_version_strategy(files, required_by)
+
+    def _parse_and_filter_files_by_extension(self, files: Iterable[dict]) -> list[dict]:
+
         # remove files with unsupported extensions
         pattern: str = rf"\.{self.package_type_regex}$"
-        files = list(filter(lambda file: re.search(pattern, file["filename"]), files))
+        return list(filter(lambda file: re.search(pattern, file["filename"]), files))
 
+    def _parse_version_and_tags_in_files(self, files: list[dict]) -> list[dict]:
         # parse versions and platform tags for each file
         for file in files:
             try:
@@ -263,34 +289,40 @@ class Mirrorer:
                 print("\tSkipping file {}, exception caught".format(file["filename"]))
                 traceback.print_exc()
                 continue
+        return files
 
-        # sort all files by version in reverse order, and ignore yanked files
-        files = list(
+    def _filter_files_for_valid_versions(self, files: list[dict]) -> list[dict]:
+        # make sure all files have a version field and ignore yanked files
+        return list(
             filter(
                 lambda file: "version" in file and not file.get("yanked", False),
                 files,
             ),
         )
+
+    def _sort_files_by_version(self, files: list[dict]) -> None:
+        # sort the files by version
         files.sort(key=lambda file: file["version"], reverse=True)
 
-        # keep only files of the latest version that satisfies the
-        # requirement (if requirement doesn't have any version specifiers,
-        # take latest available version)
-        if requirement.specifier is not None:
-            files = list(
-                filter(
-                    lambda file: requirement.specifier.contains(file["version"]),
-                    files,
-                ),
-            )
+    def _filter_by_requirement(
+        self,
+        files: list[dict],
+        requirement: packaging.requirements.Requirement,
+    ) -> list[dict]:
+        if requirement.specifier is None:
+            return files
 
-        if len(files) == 0:
-            print(f"Skipping {requirement}, no version matches requirement")
-            return None
+        # keep only files of the version that satisfies the requirement
+        return list(
+            filter(
+                lambda file: requirement.specifier.contains(file["version"]),
+                files,
+            ),
+        )
 
-        # Now we only have files that satisfy the requirement, and we need to
+    def _filter_files_by_environment(self, files: list[dict]) -> list[dict]:
         # filter out files that do not match our environments.
-        files = list(
+        return list(
             filter(
                 lambda file: self._matches_environments(
                     file,
@@ -301,17 +333,18 @@ class Mirrorer:
             ),
         )
 
-        if len(files) == 0:
-            print(f"Skipping {requirement}, no file matches environments")
-            return None
+    def _filter_files_by_version_strategy(
+        self,
+        files: list[dict],
+        required_by: packaging.requirements.Requirement | None,
+    ) -> list[dict]:
+        # Don't filter files for versions if we need all versions and this packages is a top-level requirement
+        if self.mirror_all_versions and required_by is None:
+            return files
 
         # Only keep files from the latest version in case the package is a dependency of another
-        # otherwise, if it's a top-level package, make it dependent on the all_versions flag
-        if not self.mirror_all_versions or required_by is not None:
-            latest_version = files[0]["version"]
-            files = list(filter(lambda file: file["version"] == latest_version, files))
-
-        return files
+        latest_version = files[0]["version"]
+        return list(filter(lambda file: file["version"] == latest_version, files))
 
     @staticmethod
     def _matches_environments(  # noqa: C901, PLR0912
