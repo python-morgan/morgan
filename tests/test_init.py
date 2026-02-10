@@ -1,4 +1,6 @@
 # pylint: disable=missing-function-docstring,missing-class-docstring,missing-module-docstring
+from __future__ import annotations
+
 import argparse
 import hashlib
 import os
@@ -170,7 +172,7 @@ class TestFilterFiles:
                 python_version = 3.10
                 sys_platform = linux
                 platform_machine = x86_64
-                platform_tag = manylinux
+                platform_tag = manylinux2014_x86_64
                 """,
             )
         return tmp_path
@@ -214,6 +216,51 @@ class TestFilterFiles:
         ]
 
     @pytest.fixture
+    def sample_wheels(self):
+        return [
+            self.make_file(
+                "sample_package-2.0.0-cp313-cp313-manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+                {"is_wheel": True},
+            ),
+            self.make_file(
+                "sample_package-2.0.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+                {"is_wheel": True},
+            ),
+            self.make_file(
+                "sample_package-1.6.0-cp311-cp311-manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+                {"is_wheel": True},
+            ),
+            self.make_file(
+                "sample_package-1.6.0-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+                {"is_wheel": True},
+            ),
+            self.make_file(
+                "sample_package-1.5.2-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+                {"is_wheel": True},
+            ),
+            self.make_file(
+                "sample_package-1.5.2-cp39-cp39-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+                {"is_wheel": True},
+            ),
+            self.make_file(
+                "sample_package-1.5.1-cp39-cp39-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+                {"is_wheel": True},
+            ),
+            self.make_file(
+                "sample_package-1.5.1-cp38-cp38-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+                {"is_wheel": True},
+            ),
+            self.make_file(
+                "sample_package-1.4.9-cp38-cp38-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+                {"is_wheel": True},
+            ),
+            self.make_file(
+                "sample_package-1.4.9-cp37-cp37-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+                {"is_wheel": True},
+            ),
+        ]
+
+    @pytest.fixture
     def sample_package_files(self):
         """Fixture providing v2.0.0 (incompatible) and v1.0.0 (compatible) files."""
         # Version 2.0.0 files - NOT compatible (requires Python 3.11+, but env is 3.10)
@@ -254,7 +301,7 @@ class TestFilterFiles:
         return v1_whl, v1_tar, v2_whl, v2_tar
 
     @staticmethod
-    def extract_versions(files):
+    def extract_versions(files) -> list[str]:
         if not files:
             return []
 
@@ -325,6 +372,70 @@ class TestFilterFiles:
         )
 
         assert self.extract_versions(filtered_files) == expected_versions
+
+    @pytest.mark.parametrize(
+        ("version_spec", "expected_versions"),
+        [
+            (">=1.5.0", ["1.6.0", "1.5.2", "1.5.1"]),
+            (">=1.5.0,<1.6.0", ["1.5.2", "1.5.1"]),
+            ("==1.5.1", ["1.5.1"]),
+            (">2.0.0", []),
+        ],
+        ids=["basic_range", "complex_range", "exact_match", "no_match"],
+    )
+    def test_filter_files_with_all_wheels_mirrored(
+        self,
+        make_mirrorer,
+        sample_wheels,
+        version_spec,
+        expected_versions,
+    ):
+        """Test that file filtering correctly handles different version specifications."""
+        mirrorer = make_mirrorer(mirror_all_versions=True)
+        requirement = packaging.requirements.Requirement(
+            f"sample_package{version_spec}",
+        )
+
+        # pylint: disable=W0212
+        filtered_files = mirrorer._filter_files(  # noqa: SLF001
+            requirement=requirement,
+            required_by=None,
+            files=sample_wheels,
+        )
+
+        assert set(self.extract_versions(filtered_files)) == set(expected_versions)
+
+    @pytest.mark.parametrize(
+        ("version_spec", "expected_versions"),
+        [
+            (">=1.5.0", ["1.6.0"]),
+            (">=1.5.0,<1.6.0", ["1.5.2"]),
+            ("==1.5.1", ["1.5.1"]),
+            (">2.0.0", []),
+        ],
+        ids=["basic_range", "complex_range", "exact_match", "no_match"],
+    )
+    def test_filter_files_with_latest_wheel_mirrored(
+        self,
+        make_mirrorer,
+        sample_wheels,
+        version_spec,
+        expected_versions,
+    ):
+        """Test that file filtering correctly handles different version specifications."""
+        mirrorer = make_mirrorer(mirror_all_versions=False)
+        requirement = packaging.requirements.Requirement(
+            f"sample_package{version_spec}",
+        )
+
+        # pylint: disable=W0212
+        filtered_files = mirrorer._filter_files(  # noqa: SLF001
+            requirement=requirement,
+            required_by=None,
+            files=sample_wheels,
+        )
+
+        assert set(self.extract_versions(filtered_files)) == set(expected_versions)
 
     def test_filter_files_selects_latest_compatible_version_of_wheel_and_sdist(
         self,
