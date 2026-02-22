@@ -55,6 +55,7 @@ class Mirrorer:
         self.mirror_all_wheels: bool = args.mirror_all_wheels
         self.mirror_all_versions: bool = args.mirror_all_versions
         self.package_type_regex: str = args.package_type_regex
+        self.prerelease = args.prerelease
         self.config = configparser.ConfigParser(
             strict=False,
             dict_type=ListExtendingOrderedDict,
@@ -262,19 +263,22 @@ class Mirrorer:
     def _parse_version_and_tags_in_files(self, files: list[dict]) -> list[dict]:
         # parse versions and platform tags for each file
         for file in files:
+            fn = file["filename"]
             try:
-                if re.search(r"\.whl$", file["filename"]):
+                if fn.endswith(".whl"):
                     _, file["version"], ___, file["tags"] = (
-                        packaging.utils.parse_wheel_filename(file["filename"])
+                        packaging.utils.parse_wheel_filename(fn)
                     )
                     file["is_wheel"] = True
-                elif re.search(r"\.(tar\.gz|zip)$", file["filename"]):
+                elif fn.endswith((".tar.gz", ".zip")):
                     _, file["version"] = packaging.utils.parse_sdist_filename(
                         # fix: selenium-2.0-dev-9429.tar.gz -> 9429
-                        to_single_dash(file["filename"]),
+                        to_single_dash(fn),
                     )
                     file["is_wheel"] = False
                     file["tags"] = None
+                if file["version"].is_prerelease and not self.prerelease:
+                    continue
             except (  # noqa: PERF203
                 packaging.version.InvalidVersion,
                 packaging.utils.InvalidSdistFilename,
@@ -288,7 +292,7 @@ class Mirrorer:
                 # can ignore such files
                 continue
             except Exception:  # noqa: BLE001
-                print("\tSkipping file {}, exception caught".format(file["filename"]))
+                print(f"\tSkipping file {fn}, exception caught")
                 traceback.print_exc()
                 continue
         return files
@@ -449,7 +453,7 @@ class Mirrorer:
         if fileinfo.get("tags"):
             # At least one of the tags must match ALL of our environments
             for tag in fileinfo["tags"]:
-                (intrp_name, intrp_ver) = parse_interpreter(tag.interpreter)
+                intrp_name, intrp_ver = parse_interpreter(tag.interpreter)
                 if intrp_name not in ("py", "cp"):
                     continue
 
@@ -722,12 +726,7 @@ def mirror(args: argparse.Namespace):
         m.copy_server()
 
 
-def main():  # noqa: C901
-    """
-    Executes the command line interface of Morgan. Use -h for a full list of
-    flags, options and arguments.
-    """
-
+def create_arg_parser() -> argparse.ArgumentParser:
     def my_url(arg):
         # url -> url/ without params
         # https://stackoverflow.com/a/73719022
@@ -799,6 +798,11 @@ def main():  # noqa: C901
             "(default: fetch only the wheel for latest compatible Python version)"
         ),
     )
+    parser.add_argument(
+        "--prerelease",
+        action="store_true",
+        help="download prerelease too (dev, a, b, rc)",
+    )
 
     server.add_arguments(parser)
     configurator.add_arguments(parser)
@@ -816,6 +820,15 @@ def main():  # noqa: C901
         help="Command to execute",
     )
 
+    return parser
+
+
+def main():  # noqa: C901
+    """
+    Executes the command line interface of Morgan. Use -h for a full list of
+    flags, options and arguments.
+    """
+    parser = create_arg_parser()
     args = parser.parse_args()
 
     # These commands do not require a configuration file and therefore should
