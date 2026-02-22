@@ -34,9 +34,12 @@ class TestCalculateScoresForWheel:
         args = create_arg_parser().parse_args(
             [
                 "mirror",
-                "--index-path", str(temp_index_path),
-                "--index-url", "https://example.com/simple",
-                "--config", os.path.join(temp_index_path, "morgan.ini"),
+                "--index-path",
+                str(temp_index_path),
+                "--index-url",
+                "https://example.com/simple",
+                "--config",
+                os.path.join(temp_index_path, "morgan.ini"),
                 "--mirror-all-wheels",
             ],
         )

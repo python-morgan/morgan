@@ -96,8 +96,10 @@ class TestMirrorer:
         args = create_arg_parser().parse_args(
             [
                 "mirror",
-                "--index-path", str(temp_index_path),
-                "--config", os.path.join(temp_index_path, "morgan.ini"),
+                "--index-path",
+                str(temp_index_path),
+                "--config",
+                os.path.join(temp_index_path, "morgan.ini"),
             ],
         )
 
@@ -115,8 +117,10 @@ class TestMirrorer:
         args = create_arg_parser().parse_args(
             [
                 "mirror",
-                "--index-path", str(temp_index_path),
-                "--config", os.path.join(temp_index_path, "morgan.ini"),
+                "--index-path",
+                str(temp_index_path),
+                "--config",
+                os.path.join(temp_index_path, "morgan.ini"),
             ],
         )
         mirrorer = Mirrorer(args)
@@ -140,8 +144,10 @@ class TestMirrorer:
         args = create_arg_parser().parse_args(
             [
                 "mirror",
-                "--index-path", str(temp_index_path),
-                "--config", os.path.join(temp_index_path, "morgan.ini"),
+                "--index-path",
+                str(temp_index_path),
+                "--config",
+                os.path.join(temp_index_path, "morgan.ini"),
             ],
         )
         mirrorer = Mirrorer(args)
@@ -188,9 +194,12 @@ class TestFilterFiles:
         def _make_mirrorer(mirror_all_versions, mirror_all_wheels=False):
             argsL = [
                 "mirror",
-                "--index-path", str(temp_index_path),
-                "--index-url", "https://example.com/simple",
-                "--config", os.path.join(temp_index_path, "morgan.ini"),
+                "--index-path",
+                str(temp_index_path),
+                "--index-url",
+                "https://example.com/simple",
+                "--config",
+                os.path.join(temp_index_path, "morgan.ini"),
             ]
             if mirror_all_versions:
                 argsL.append("--mirror-all-versions")
