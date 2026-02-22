@@ -10,10 +10,10 @@ import pytest
 
 from morgan import (
     Mirrorer,
+    create_arg_parser,
     parse_interpreter,
     parse_requirement,
     server,
-    create_arg_parser,
 )
 
 
@@ -192,7 +192,7 @@ class TestFilterFiles:
     def make_mirrorer(self, temp_index_path):
         # Return a function that creates mirrorer instances
         def _make_mirrorer(mirror_all_versions, mirror_all_wheels=False):
-            argsL = [
+            args_list = [
                 "mirror",
                 "--index-path",
                 str(temp_index_path),
@@ -202,10 +202,10 @@ class TestFilterFiles:
                 os.path.join(temp_index_path, "morgan.ini"),
             ]
             if mirror_all_versions:
-                argsL.append("--mirror-all-versions")
+                args_list.append("--mirror-all-versions")
             if mirror_all_wheels:
-                argsL.append("--mirror-all-wheels")
-            args = create_arg_parser().parse_args(argsL)
+                args_list.append("--mirror-all-wheels")
+            args = create_arg_parser().parse_args(args_list)
             return Mirrorer(args)
 
         return _make_mirrorer

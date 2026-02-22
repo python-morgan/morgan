@@ -279,7 +279,7 @@ class Mirrorer:
                     file["tags"] = None
                 if file["version"].is_prerelease and not self.prerelease:
                     continue
-            except (  # noqa: PERF203
+            except (
                 packaging.version.InvalidVersion,
                 packaging.utils.InvalidSdistFilename,
                 packaging.utils.InvalidWheelFilename,
@@ -823,7 +823,7 @@ def create_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main():  # noqa: C901
+def main():
     """
     Executes the command line interface of Morgan. Use -h for a full list of
     flags, options and arguments.
