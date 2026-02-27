@@ -3,13 +3,12 @@
 # pylint: disable=missing-function-docstring,missing-class-docstring,protected-access
 # ruff: noqa: SLF001
 
-import argparse
 import os
 from typing import NamedTuple
 
 import pytest
 
-from morgan import Mirrorer
+from morgan import Mirrorer, create_arg_parser
 
 
 class TestCalculateScoresForWheel:
@@ -32,13 +31,17 @@ class TestCalculateScoresForWheel:
 
     @pytest.fixture
     def mirrorer(self, temp_index_path):
-        args = argparse.Namespace(
-            index_path=temp_index_path,
-            index_url="https://example.com/simple/",
-            config=os.path.join(temp_index_path, "morgan.ini"),
-            mirror_all_versions=False,
-            package_type_regex=r"(whl|zip|tar\.gz)",
-            mirror_all_wheels=True,
+        args = create_arg_parser().parse_args(
+            [
+                "mirror",
+                "--index-path",
+                str(temp_index_path),
+                "--index-url",
+                "https://example.com/simple",
+                "--config",
+                os.path.join(temp_index_path, "morgan.ini"),
+                "--mirror-all-wheels",
+            ],
         )
         return Mirrorer(args)
 

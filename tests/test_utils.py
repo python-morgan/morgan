@@ -1,6 +1,10 @@
+import base64
+import os
+
 import pytest
 from packaging.requirements import Requirement
 
+from morgan import Mirrorer, create_arg_parser
 from morgan.utils import filter_relevant_requirements, is_requirement_relevant
 
 
@@ -208,3 +212,76 @@ class TestEnvironmentEvaluation:
         filtered = filter_relevant_requirements(requirements, environments)
 
         assert len(filtered) == 2
+
+
+def create_auth_header(user: str, passwd: str):
+    # ruff: noqa: UP012
+    s = base64.b64encode(f"{user}:{passwd}".encode("utf-8")).decode("ascii")
+    return ("Authorization", f"Basic {s}")
+
+
+class TestNetrc:
+    """Tests for Index's .netrc evaluation"""
+
+    @pytest.fixture
+    def temp_index_path(self, tmp_path):
+        # Create minimal config file
+        config_path = os.path.join(tmp_path, "morgan.ini")
+        with open(config_path, "w", encoding="utf-8") as f:
+            f.write(
+                """
+                [env.test_env]
+                python_version = 3.10
+                sys_platform = linux
+                platform_machine = x86_64
+                """,
+            )
+        return tmp_path
+
+    @pytest.fixture
+    def temp_netrc(self, tmp_path):
+        # Create minimal config file
+        fpath = os.path.join(tmp_path, ".netrc")
+        with open(fpath, "w", encoding="utf-8") as f:
+            f.write(
+                """\
+default login xxx password yyy
+
+machine example.com
+login daniel
+password qwerty
+""",
+            )
+        return fpath
+
+    def test_default(self, temp_index_path, temp_netrc):
+        args = create_arg_parser().parse_args(
+            [
+                "mirror",
+                "--index-path",
+                str(temp_index_path),
+                "--config",
+                os.path.join(temp_index_path, "morgan.ini"),
+                "--netrc-file",
+                str(temp_netrc),
+            ],
+        )
+        m = Mirrorer(args)
+        assert m.index.auth_header == create_auth_header("xxx", "yyy")
+
+    def test_example(self, temp_index_path, temp_netrc):
+        args = create_arg_parser().parse_args(
+            [
+                "mirror",
+                "--index-path",
+                str(temp_index_path),
+                "--index-url",
+                "https://example.com/simple",
+                "--config",
+                os.path.join(temp_index_path, "morgan.ini"),
+                "--netrc-file",
+                str(temp_netrc),
+            ],
+        )
+        m = Mirrorer(args)
+        assert m.index.auth_header == create_auth_header("daniel", "qwerty")

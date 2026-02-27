@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import configparser
 import hashlib
-import json
 import os
 import os.path
 import re
@@ -25,6 +24,7 @@ from morgan import configurator, metadata, server
 from morgan.__about__ import __version__
 from morgan.utils import (
     Cache,
+    Index,
     ListExtendingOrderedDict,
     is_requirement_relevant,
     to_single_dash,
@@ -60,6 +60,7 @@ class Mirrorer:
             dict_type=ListExtendingOrderedDict,
         )
         self.config.read(args.config)
+        self.index = Index(args)
         self.envs = {}
         self._supported_pyversions = []
         self._supported_platforms = []
@@ -158,24 +159,7 @@ class Mirrorer:
         else:
             print(f"{requirement}")
 
-        data: dict | None = None
-
-        # get information about this package from the Simple API in JSON
-        # format as per PEP 691
-        request = urllib.request.Request(  # noqa: S310
-            f"{self.index_url}{requirement.name}/",
-            headers={
-                "Accept": "application/vnd.pypi.simple.v1+json",
-            },
-        )
-
-        response_url = ""
-        with urllib.request.urlopen(request) as response:  # noqa: S310
-            data = json.load(response)
-            response_url = str(response.url)
-            if not data:
-                msg = f"Failed loading metadata: {response}"
-                raise RuntimeError(msg)
+        data, response_url = self.index.get(requirement.name)
 
         # check metadata version ~1.0
         v_str = data["meta"]["api-version"]
@@ -449,7 +433,7 @@ class Mirrorer:
         if fileinfo.get("tags"):
             # At least one of the tags must match ALL of our environments
             for tag in fileinfo["tags"]:
-                (intrp_name, intrp_ver) = parse_interpreter(tag.interpreter)
+                intrp_name, intrp_ver = parse_interpreter(tag.interpreter)
                 if intrp_name not in ("py", "cp"):
                     continue
 
@@ -722,11 +706,7 @@ def mirror(args: argparse.Namespace):
         m.copy_server()
 
 
-def main():  # noqa: C901
-    """
-    Executes the command line interface of Morgan. Use -h for a full list of
-    flags, options and arguments.
-    """
+def create_arg_parser() -> argparse.ArgumentParser:
 
     def my_url(arg):
         # url -> url/ without params
@@ -802,6 +782,7 @@ def main():  # noqa: C901
 
     server.add_arguments(parser)
     configurator.add_arguments(parser)
+    Index.add_arguments(parser)
 
     parser.add_argument(
         "command",
@@ -816,6 +797,16 @@ def main():  # noqa: C901
         help="Command to execute",
     )
 
+    return parser
+
+
+def main():
+    """
+    Executes the command line interface of Morgan. Use -h for a full list of
+    flags, options and arguments.
+    """
+
+    parser = create_arg_parser()
     args = parser.parse_args()
 
     # These commands do not require a configuration file and therefore should

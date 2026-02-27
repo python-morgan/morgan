@@ -93,3 +93,17 @@ ignore = [
 [tool.mypy]
 check_untyped_defs = true
 follow_untyped_imports = true
+
+[tool.isort]
+profile = "black"
+
+[tool.pylint]
+"messages control".disable = [
+    "line-too-long",
+    "missing-class-docstring",
+    "missing-function-docstring",
+    "missing-module-docstring",
+    "too-few-public-methods",
+    "too-many-instance-attributes",
+]
+reports.score = false

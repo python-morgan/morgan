@@ -1,13 +1,20 @@
 from __future__ import annotations
 
+import base64
+import json
+import netrc
 import os
 import re
+import urllib.parse
+import urllib.request
 from collections import OrderedDict
 from typing import TYPE_CHECKING, Iterable
 
 import dateutil  # type: ignore[import-untyped]
 
 if TYPE_CHECKING:
+    import argparse
+
     from packaging.requirements import Requirement
 
 
@@ -48,6 +55,7 @@ class Cache:
             if not specifier:
                 return True
             # ruff: noqa: SLF001
+            # pylint: disable=protected-access
             if all(spec.operator in (">", ">=") for spec in specifier._specs):
                 return True
         return False
@@ -151,3 +159,57 @@ class ListExtendingOrderedDict(OrderedDict):
             self[key].extend(value)
         else:
             super().__setitem__(key, value)
+
+
+class Index:
+    def __init__(self, args: argparse.Namespace):
+        self.index_url = args.index_url.rstrip("/")
+        self.auth_header: tuple[str, str] | None = None
+        netrc_ = None
+        if args.netrc_file:
+            netrc_ = netrc.netrc(args.netrc_file)
+        elif args.netrc:
+            netrc_ = netrc.netrc()
+        if netrc_:
+            hostname = urllib.parse.urlsplit(self.index_url).hostname
+            t = netrc_.authenticators(hostname)  # login, account, passwd
+            if t:
+                # ruff: noqa: UP012
+                s = base64.b64encode(f"{t[0]}:{t[2]}".encode("utf-8")).decode("ascii")
+                self.auth_header = ("Authorization", f"Basic {s}")
+
+    def get(self, pkg_name: str) -> tuple[dict, str]:
+        # get information about this package from the Simple API in JSON
+        # format as per PEP 691
+        request = urllib.request.Request(  # noqa: S310
+            f"{self.index_url}/{pkg_name}/",
+            headers={
+                "Accept": "application/vnd.pypi.simple.v1+json",
+            },
+        )
+        if self.auth_header:
+            request.add_header(*self.auth_header)
+
+        with urllib.request.urlopen(request) as response:  # noqa: S310
+            data = json.load(response)
+            response_url = str(response.url)
+            if data:
+                return (data, response_url)
+            msg = f"Failed loading metadata: {response}"
+            raise RuntimeError(msg)
+
+    @staticmethod
+    def add_arguments(parser: argparse.ArgumentParser):
+        parser.add_argument(
+            "--netrc",
+            dest="netrc",
+            action="store_true",
+            help="Must read .netrc for username and password",
+        )
+
+        parser.add_argument(
+            "--netrc-file",
+            dest="netrc_file",
+            nargs="?",
+            help="Specify FILE for netrc",
+        )
