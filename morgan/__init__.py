@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import configparser
+import gzip
 import hashlib
 import json
 import os
@@ -166,12 +167,18 @@ class Mirrorer:
             f"{self.index_url}{requirement.name}/",
             headers={
                 "Accept": "application/vnd.pypi.simple.v1+json",
+                "Accept-Encoding": "gzip",
             },
         )
 
         response_url = ""
-        with urllib.request.urlopen(request) as response:  # noqa: S310
-            data = json.load(response)
+        with urllib.request.urlopen(request) as response:
+            bytes1 = response.read()
+            try:
+                bytes2 = gzip.decompress(bytes1)
+                data = json.loads(bytes2)
+            except gzip.BadGzipFile:
+                data = json.loads(bytes1)
             response_url = str(response.url)
             if not data:
                 msg = f"Failed loading metadata: {response}"
