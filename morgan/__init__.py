@@ -140,6 +140,7 @@ class Mirrorer:
             with open(outpath, "w") as out:
                 out.write(inspect.getsource(server))
 
+    # ruff: noqa: PLR0915
     def _mirror(  # noqa: C901, PLR0912
         self,
         requirement: packaging.requirements.Requirement,
@@ -163,7 +164,7 @@ class Mirrorer:
 
         # get information about this package from the Simple API in JSON
         # format as per PEP 691
-        request = urllib.request.Request(  # noqa: S310
+        request = urllib.request.Request(
             f"{self.index_url}{requirement.name}/",
             headers={
                 "Accept": "application/vnd.pypi.simple.v1+json",
@@ -172,6 +173,7 @@ class Mirrorer:
         )
 
         response_url = ""
+        # ruff: noqa: S310
         with urllib.request.urlopen(request) as response:
             bytes1 = response.read()
             try:
@@ -603,7 +605,7 @@ class Mirrorer:
                 return True
 
         print("\t{}...".format(fileinfo["url"]), end=" ")
-        with urllib.request.urlopen(fileinfo["url"]) as inp, open(target, "wb") as out:  # noqa: S310
+        with urllib.request.urlopen(fileinfo["url"]) as inp, open(target, "wb") as out:
             out.write(inp.read())
         print("done")
 
