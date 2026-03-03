@@ -172,12 +172,12 @@ def download_req(index_url: str, req_name: str) -> tuple[dict, str]:
     response_url = ""
     # ruff: noqa: S310
     with urllib.request.urlopen(request) as response:
-        bytes1 = response.read()
-        try:
-            bytes2 = gzip.decompress(bytes1)
-            data = json.loads(bytes2)
-        except gzip.BadGzipFile:
-            data = json.loads(bytes1)
+        # Check if response is gzip-encoded
+        if response.headers.get("Content-Encoding") == "gzip":
+            with gzip.GzipFile(fileobj=response) as gzip_response:
+                data = json.load(gzip_response)
+        else:
+            data = json.load(response)
         response_url = str(response.url)
         if data:
             return data, response_url
