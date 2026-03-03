@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import argparse
 import configparser
-import gzip
 import hashlib
-import json
 import os
 import os.path
 import re
@@ -27,6 +25,7 @@ from morgan.__about__ import __version__
 from morgan.utils import (
     Cache,
     ListExtendingOrderedDict,
+    download_req,
     is_requirement_relevant,
     to_single_dash,
     touch_file,
@@ -140,7 +139,6 @@ class Mirrorer:
             with open(outpath, "w") as out:
                 out.write(inspect.getsource(server))
 
-    # ruff: noqa: PLR0915
     def _mirror(  # noqa: C901, PLR0912
         self,
         requirement: packaging.requirements.Requirement,
@@ -160,31 +158,7 @@ class Mirrorer:
         else:
             print(f"{requirement}")
 
-        data: dict | None = None
-
-        # get information about this package from the Simple API in JSON
-        # format as per PEP 691
-        request = urllib.request.Request(
-            f"{self.index_url}{requirement.name}/",
-            headers={
-                "Accept": "application/vnd.pypi.simple.v1+json",
-                "Accept-Encoding": "gzip",
-            },
-        )
-
-        response_url = ""
-        # ruff: noqa: S310
-        with urllib.request.urlopen(request) as response:
-            bytes1 = response.read()
-            try:
-                bytes2 = gzip.decompress(bytes1)
-                data = json.loads(bytes2)
-            except gzip.BadGzipFile:
-                data = json.loads(bytes1)
-            response_url = str(response.url)
-            if not data:
-                msg = f"Failed loading metadata: {response}"
-                raise RuntimeError(msg)
+        data, response_url = download_req(self.index_url, requirement.name)
 
         # check metadata version ~1.0
         v_str = data["meta"]["api-version"]
@@ -458,7 +432,7 @@ class Mirrorer:
         if fileinfo.get("tags"):
             # At least one of the tags must match ALL of our environments
             for tag in fileinfo["tags"]:
-                (intrp_name, intrp_ver) = parse_interpreter(tag.interpreter)
+                intrp_name, intrp_ver = parse_interpreter(tag.interpreter)
                 if intrp_name not in ("py", "cp"):
                     continue
 
@@ -605,6 +579,7 @@ class Mirrorer:
                 return True
 
         print("\t{}...".format(fileinfo["url"]), end=" ")
+        # ruff: noqa: S310
         with urllib.request.urlopen(fileinfo["url"]) as inp, open(target, "wb") as out:
             out.write(inp.read())
         print("done")
