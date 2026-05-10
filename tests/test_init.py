@@ -1,7 +1,6 @@
 # pylint: disable=missing-function-docstring,missing-class-docstring,missing-module-docstring
 from __future__ import annotations
 
-import argparse
 import hashlib
 import os
 
@@ -9,7 +8,13 @@ import packaging.requirements
 import packaging.version
 import pytest
 
-from morgan import PYPI_ADDRESS, Mirrorer, parse_interpreter, parse_requirement, server
+from morgan import (
+    Mirrorer,
+    create_arg_parser,
+    parse_interpreter,
+    parse_requirement,
+    server,
+)
 
 
 class TestParseInterpreter:
@@ -88,13 +93,14 @@ class TestMirrorer:
         return tmpdir
 
     def test_mirrorer_initialization(self, temp_index_path):
-        args = argparse.Namespace(
-            index_path=temp_index_path,
-            index_url="https://pypi.org/simple/",
-            config=os.path.join(temp_index_path, "morgan.ini"),
-            mirror_all_versions=False,
-            package_type_regex="(whl|zip|tar.gz)",
-            mirror_all_wheels=False,
+        args = create_arg_parser().parse_args(
+            [
+                "mirror",
+                "--index-path",
+                str(temp_index_path),
+                "--config",
+                os.path.join(temp_index_path, "morgan.ini"),
+            ],
         )
 
         mirrorer = Mirrorer(args)
@@ -108,13 +114,14 @@ class TestMirrorer:
         assert not mirrorer.mirror_all_versions
 
     def test_server_file_copying(self, temp_index_path):
-        args = argparse.Namespace(
-            index_path=temp_index_path,
-            index_url=PYPI_ADDRESS,
-            config=os.path.join(temp_index_path, "morgan.ini"),
-            mirror_all_versions=False,
-            package_type_regex="(whl|zip|tar.gz)",
-            mirror_all_wheels=False,
+        args = create_arg_parser().parse_args(
+            [
+                "mirror",
+                "--index-path",
+                str(temp_index_path),
+                "--config",
+                os.path.join(temp_index_path, "morgan.ini"),
+            ],
         )
         mirrorer = Mirrorer(args)
 
@@ -134,13 +141,14 @@ class TestMirrorer:
             )
 
     def test_file_hashing(self, temp_index_path):
-        args = argparse.Namespace(
-            index_path=temp_index_path,
-            index_url=PYPI_ADDRESS,
-            config=os.path.join(temp_index_path, "morgan.ini"),
-            mirror_all_versions=False,
-            package_type_regex="(whl|zip|tar.gz)",
-            mirror_all_wheels=False,
+        args = create_arg_parser().parse_args(
+            [
+                "mirror",
+                "--index-path",
+                str(temp_index_path),
+                "--config",
+                os.path.join(temp_index_path, "morgan.ini"),
+            ],
         )
         mirrorer = Mirrorer(args)
 
@@ -184,14 +192,20 @@ class TestFilterFiles:
     def make_mirrorer(self, temp_index_path):
         # Return a function that creates mirrorer instances
         def _make_mirrorer(mirror_all_versions, mirror_all_wheels=False):
-            args = argparse.Namespace(
-                index_path=temp_index_path,
-                index_url="https://example.com/simple",
-                config=os.path.join(temp_index_path, "morgan.ini"),
-                mirror_all_versions=mirror_all_versions,
-                package_type_regex=r"(whl|zip|tar\.gz)",
-                mirror_all_wheels=mirror_all_wheels,
-            )
+            args_list = [
+                "mirror",
+                "--index-path",
+                str(temp_index_path),
+                "--index-url",
+                "https://example.com/simple",
+                "--config",
+                os.path.join(temp_index_path, "morgan.ini"),
+            ]
+            if mirror_all_versions:
+                args_list.append("--mirror-all-versions")
+            if mirror_all_wheels:
+                args_list.append("--mirror-all-wheels")
+            args = create_arg_parser().parse_args(args_list)
             return Mirrorer(args)
 
         return _make_mirrorer

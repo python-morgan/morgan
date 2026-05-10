@@ -295,7 +295,7 @@ class MetadataParser:
                             isinstance(marker[0], MarkerVariable)
                             and marker[0].value == "extra"
                         ):
-                            extra = marker[2].value
+                            extra = marker[2].value  # type: ignore[union-attr]
                             break
 
                 if extra:
