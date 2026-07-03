@@ -556,7 +556,7 @@ class Mirrorer:
         hashalg = (
             PREFERRED_HASH_ALG
             if PREFERRED_HASH_ALG in fileinfo["hashes"]
-            else fileinfo["hashes"].keys()[0]
+            else next(iter(fileinfo["hashes"]))
         )
 
         self._download_file(fileinfo, filepath, hashalg)
