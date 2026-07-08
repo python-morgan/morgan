@@ -147,16 +147,19 @@ class Mirrorer:
         if self._processed_pkgs.check(requirement):
             return None
 
-        # Check if requirement is relevant for any environment
-        if not is_requirement_relevant(requirement, self.envs.values()):
-            print(f"\tSkipping {requirement}, not relevant for any environment")
-            self._processed_pkgs.add(requirement)  # Mark as processed
-            return None
-
+        # Display the cause of 'Skipping...'
+        extras = None
         if required_by:
+            extras = required_by.extras
             print(f"[{required_by}]: {requirement}")
         else:
             print(f"{requirement}")
+
+        # Check if requirement is relevant for any environment
+        if not is_requirement_relevant(requirement, self.envs.values(), extras=extras):
+            print("\tSkipping, not relevant for any environment")
+            self._processed_pkgs.add(requirement)  # Mark as processed
+            return None
 
         data, response_url = download_req(self.index_url, requirement.name)
 
@@ -579,8 +582,7 @@ class Mirrorer:
                 return True
 
         print("\t{}...".format(fileinfo["url"]), end=" ")
-        # ruff: noqa: S310
-        with urllib.request.urlopen(fileinfo["url"]) as inp, open(target, "wb") as out:
+        with urllib.request.urlopen(fileinfo["url"]) as inp, open(target, "wb") as out:  # noqa: S310
             out.write(inp.read())
         print("done")
 
