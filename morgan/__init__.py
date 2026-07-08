@@ -435,7 +435,7 @@ class Mirrorer:
         if fileinfo.get("tags"):
             # At least one of the tags must match ALL of our environments
             for tag in fileinfo["tags"]:
-                intrp_name, intrp_ver = parse_interpreter(tag.interpreter)
+                (intrp_name, intrp_ver) = parse_interpreter(tag.interpreter)
                 if intrp_name not in ("py", "cp"):
                     continue
 
