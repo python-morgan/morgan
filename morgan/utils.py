@@ -48,7 +48,6 @@ class Cache:
             if not specifier:
                 return True
             # ruff: noqa: SLF001
-            # pylint: disable=protected-access
             if all(spec.operator in (">", ">=") for spec in specifier._specs):
                 return True
         return False
