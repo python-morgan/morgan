@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-import gzip
-import json
 import os
 import re
-import urllib.request
 from collections import OrderedDict
 from typing import TYPE_CHECKING, Iterable
 
@@ -155,31 +152,3 @@ class ListExtendingOrderedDict(OrderedDict):
             self[key].extend(value)
         else:
             super().__setitem__(key, value)
-
-
-def download_req(index_url: str, req_name: str) -> tuple[dict, str]:
-    # get information about this package from the Simple API in JSON
-    # format as per PEP 691
-    url = index_url.rstrip("/")
-    request = urllib.request.Request(
-        f"{url}/{req_name}/",
-        headers={
-            "Accept": "application/vnd.pypi.simple.v1+json",
-            "Accept-Encoding": "gzip",
-        },
-    )
-
-    response_url = ""
-    # ruff: noqa: S310
-    with urllib.request.urlopen(request) as response:
-        # Check if response is gzip-encoded
-        if response.headers.get("Content-Encoding") == "gzip":
-            with gzip.GzipFile(fileobj=response) as gzip_response:
-                data = json.load(gzip_response)
-        else:
-            data = json.load(response)
-        response_url = str(response.url)
-        if data:
-            return data, response_url
-        msg = f"Failed loading metadata: {response}"
-        raise RuntimeError(msg)
