@@ -111,10 +111,17 @@ class Mirrorer:
         while len(deps) > 0:
             next_deps = {}
             for dep in deps:
-                more_deps = self._mirror(
-                    deps[dep]["requirement"],
-                    required_by=deps[dep]["required_by"],
-                )
+                try:
+                    more_deps = self._mirror(
+                        deps[dep]["requirement"],
+                        required_by=deps[dep]["required_by"],
+                    )
+                except urllib.error.HTTPError as err:
+                    # dependency names come from package metadata and may not exist
+                    # on the index (404). Skip them so one broken dependency does
+                    # not abort the entire mirror run.
+                    print(f"\tError: {err}")
+                    continue
                 if more_deps:
                     next_deps.update(more_deps)
             deps = next_deps.copy()

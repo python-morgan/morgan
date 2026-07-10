@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import email.message
 import hashlib
 import os
 import urllib.error
@@ -569,3 +570,69 @@ class TestFilterFiles:
         assert {
             "sample_package-1.0.0.tar.gz",
         } == set(filenames), f"Wrong packages selected. Got: {filenames}"
+
+
+class TestMirrorDependencyErrors:
+    @pytest.fixture
+    def mirrorer(self, tmp_path):
+        config_path = os.path.join(tmp_path, "morgan.ini")
+        with open(config_path, "w", encoding="utf-8") as f:
+            f.write(
+                """
+                [env.test_env]
+                python_version = 3.10
+                sys_platform = linux
+                platform_machine = x86_64
+
+                [requirements]
+                toplevel = >=1.0
+                """,
+            )
+        args = argparse.Namespace(
+            index_path=str(tmp_path),
+            index_url=PYPI_ADDRESS,
+            config=config_path,
+            mirror_all_versions=False,
+            package_type_regex=r"(whl|zip|tar\.gz)",
+            mirror_all_wheels=False,
+        )
+        return Mirrorer(args)
+
+    def test_mirror_continues_when_dependency_fails(self, mirrorer, monkeypatch):
+        """A 404 on one dependency must not abort the remaining dependencies."""
+        toplevel = parse_requirement("toplevel>=1.0")
+        processed = []
+
+        def fake_mirror(requirement, required_by=None):
+            processed.append(requirement.name)
+            if required_by is None:
+                # inject one failing and one working dependency; the failing
+                # one comes first so an uncaught error would skip the other
+                return {
+                    "missing-dep": {
+                        "requirement": parse_requirement("missing-dep"),
+                        "required_by": toplevel,
+                    },
+                    "present-dep": {
+                        "requirement": parse_requirement("present-dep"),
+                        "required_by": toplevel,
+                    },
+                }
+            if requirement.name == "missing-dep":
+                raise urllib.error.HTTPError(
+                    url="https://example.com/missing-dep/",
+                    code=404,
+                    msg="Not Found",
+                    hdrs=email.message.Message(),
+                    fp=None,
+                )
+            return None
+
+        # pylint: disable=W0212
+        monkeypatch.setattr(mirrorer, "_mirror", fake_mirror)
+
+        mirrorer.mirror("toplevel>=1.0")
+
+        assert "present-dep" in processed, (
+            "Dependencies after a failing one should still be processed"
+        )
