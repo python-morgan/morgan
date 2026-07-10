@@ -34,6 +34,9 @@ from morgan.utils import (
 PYPI_ADDRESS = "https://pypi.org/simple/"
 PREFERRED_HASH_ALG = "sha256"
 
+# socket-level timeout for requests to the package index, in seconds
+URLOPEN_TIMEOUT = 60
+
 
 class Mirrorer:
     """
@@ -173,7 +176,7 @@ class Mirrorer:
         )
 
         response_url = ""
-        with urllib.request.urlopen(request) as response:  # noqa: S310
+        with urllib.request.urlopen(request, timeout=URLOPEN_TIMEOUT) as response:  # noqa: S310
             data = json.load(response)
             response_url = str(response.url)
             if not data:
@@ -599,7 +602,10 @@ class Mirrorer:
                 return True
 
         print("\t{}...".format(fileinfo["url"]), end=" ")
-        with urllib.request.urlopen(fileinfo["url"]) as inp, open(target, "wb") as out:  # noqa: S310
+        with urllib.request.urlopen(  # noqa: S310
+            fileinfo["url"],
+            timeout=URLOPEN_TIMEOUT,
+        ) as inp, open(target, "wb") as out:
             out.write(inp.read())
         print("done")
 
