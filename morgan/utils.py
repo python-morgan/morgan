@@ -5,7 +5,7 @@ import re
 from collections import OrderedDict
 from typing import TYPE_CHECKING, Iterable
 
-import dateutil  # type: ignore[import-untyped]
+import dateutil.parser  # type: ignore[import-untyped]
 
 if TYPE_CHECKING:
     from packaging.requirements import Requirement
