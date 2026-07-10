@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import configparser
+import gzip
 import hashlib
 import json
 import os
@@ -161,24 +162,7 @@ class Mirrorer:
             self._processed_pkgs.add(requirement)  # Mark as processed
             return None
 
-        data: dict | None = None
-
-        # get information about this package from the Simple API in JSON
-        # format as per PEP 691
-        request = urllib.request.Request(  # noqa: S310
-            f"{self.index_url}{requirement.name}/",
-            headers={
-                "Accept": "application/vnd.pypi.simple.v1+json",
-            },
-        )
-
-        response_url = ""
-        with urllib.request.urlopen(request) as response:  # noqa: S310
-            data = json.load(response)
-            response_url = str(response.url)
-            if not data:
-                msg = f"Failed loading metadata: {response}"
-                raise RuntimeError(msg)
+        data, response_url = download_req(self.index_url, requirement.name)
 
         # check metadata version ~1.0
         v_str = data["meta"]["api-version"]
@@ -849,6 +833,33 @@ def main():  # noqa: C901
         mirror(args)
     elif args.command == "copy_server":
         Mirrorer(args).copy_server()
+
+
+def download_req(index_url: str, req_name: str) -> tuple[dict, str]:
+    # get information about this package from the Simple API in JSON
+    # format as per PEP 691
+    url = index_url.rstrip("/")
+    request = urllib.request.Request(  # noqa: S310
+        f"{url}/{req_name}/",
+        headers={
+            "Accept": "application/vnd.pypi.simple.v1+json",
+            "Accept-Encoding": "gzip",
+        },
+    )
+
+    response_url = ""
+    with urllib.request.urlopen(request) as response:  # noqa: S310
+        # Check if response is gzip-encoded
+        if response.headers.get("Content-Encoding") == "gzip":
+            with gzip.GzipFile(fileobj=response) as gzip_response:
+                data = json.load(gzip_response)
+        else:
+            data = json.load(response)
+        response_url = str(response.url)
+        if data:
+            return data, response_url
+        msg = f"Failed loading metadata: {response}"
+        raise RuntimeError(msg)
 
 
 if __name__ == "__main__":
