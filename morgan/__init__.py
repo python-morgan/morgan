@@ -813,6 +813,9 @@ def mirror(args: argparse.Namespace):
     """
 
     m = Mirrorer(args)
+    if not m.config.has_section("requirements"):
+        msg = f"Config file {args.config} has no [requirements] section"
+        raise ValueError(msg)
     for package in m.config["requirements"]:
         reqs = m.config["requirements"][package].splitlines()
         if not reqs:

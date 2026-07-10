@@ -12,6 +12,7 @@ import packaging.requirements
 import packaging.version
 import pytest
 
+import morgan
 from morgan import (
     PYPI_ADDRESS,
     Mirrorer,
@@ -761,3 +762,31 @@ class TestDownloadFile:
         with pytest.raises(ValueError, match="Unsafe file path"):
             # pylint: disable=W0212
             mirrorer._process_file(requirement, fileinfo)  # noqa: SLF001
+
+
+class TestMirrorConfigValidation:
+    def test_mirror_reports_missing_requirements_section(self, tmp_path):
+        config_path = os.path.join(tmp_path, "morgan.ini")
+        with open(config_path, "w", encoding="utf-8") as f:
+            f.write(
+                """
+                [env.test_env]
+                python_version = 3.10
+                sys_platform = linux
+                platform_machine = x86_64
+                """,
+            )
+        args = argparse.Namespace(
+            index_path=str(tmp_path),
+            index_url=PYPI_ADDRESS,
+            config=config_path,
+            mirror_all_versions=False,
+            package_type_regex=r"(whl|zip|tar\.gz)",
+            mirror_all_wheels=False,
+            target_url=None,
+            use_pypi_metadata=False,
+            skip_server_copy=True,
+        )
+
+        with pytest.raises(ValueError, match=r"no \[requirements\] section"):
+            morgan.mirror(args)
