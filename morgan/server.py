@@ -100,7 +100,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                 self.wfile.write(
                     '    <a href="/{}/">{}</a>{}'.format(
                         html.escape(project["name"]),
-                        project["name"],
+                        html.escape(project["name"]),
                         newline,
                     ).encode("utf-8"),
                 )
@@ -163,18 +163,18 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                 if not no_metadata and file.get("dist-info-metadata", False):
                     self.wfile.write(
                         '    <a href="{}{}" data-dist-info-metadata="true">{}</a>{}'.format(
-                            file["url"],
-                            hashval,
-                            file["filename"],
+                            html.escape(file["url"]),
+                            html.escape(hashval),
+                            html.escape(file["filename"]),
                             newline,
                         ).encode("utf-8"),
                     )
                 else:
                     self.wfile.write(
                         '    <a href="{}{}">{}</a>{}'.format(
-                            file["url"],
-                            hashval,
-                            file["filename"],
+                            html.escape(file["url"]),
+                            html.escape(hashval),
+                            html.escape(file["filename"]),
                             newline,
                         ).encode("utf-8"),
                     )
