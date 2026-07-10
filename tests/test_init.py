@@ -12,7 +12,14 @@ import packaging.requirements
 import packaging.version
 import pytest
 
-from morgan import PYPI_ADDRESS, Mirrorer, parse_interpreter, parse_requirement, server
+from morgan import (
+    PYPI_ADDRESS,
+    Mirrorer,
+    is_safe_filename,
+    parse_interpreter,
+    parse_requirement,
+    server,
+)
 
 
 class TestParseInterpreter:
@@ -636,3 +643,109 @@ class TestMirrorDependencyErrors:
         assert "present-dep" in processed, (
             "Dependencies after a failing one should still be processed"
         )
+
+
+class TestIsSafeFilename:
+    @pytest.mark.parametrize(
+        ("filename", "expected"),
+        [
+            ("requests-2.0.0-py3-none-any.whl", True),
+            ("requests-2.0.0.tar.gz", True),
+            ("../../evil-1.0.tar.gz", False),
+            ("/etc/cron.d/evil-1.0.tar.gz", False),
+            ("..\\evil-1.0.whl", False),
+            ("C:evil-1.0.tar.gz", False),
+            ("evil-1.0.tar.gz:stream.tar.gz", False),
+            ("evil\x00-1.0.tar.gz", False),
+            ("..", False),
+            (".", False),
+            ("", False),
+        ],
+        ids=[
+            "plain_wheel",
+            "plain_sdist",
+            "relative_traversal",
+            "absolute_path",
+            "backslash_traversal",
+            "windows_drive_relative",
+            "ntfs_alternate_data_stream",
+            "nul_byte",
+            "dotdot",
+            "dot",
+            "empty",
+        ],
+    )
+    def test_is_safe_filename(self, filename, expected):
+        assert is_safe_filename(filename) == expected
+
+
+class TestDownloadFile:
+    @pytest.fixture
+    def mirrorer(self, tmp_path):
+        config_path = os.path.join(tmp_path, "morgan.ini")
+        with open(config_path, "w", encoding="utf-8") as f:
+            f.write(
+                """
+                [env.test_env]
+                python_version = 3.10
+                sys_platform = linux
+                platform_machine = x86_64
+
+                [requirements]
+                requests = >=2.0.0
+                """,
+            )
+        args = argparse.Namespace(
+            index_path=str(tmp_path),
+            index_url=PYPI_ADDRESS,
+            config=config_path,
+            mirror_all_versions=False,
+            package_type_regex="(whl|zip|tar.gz)",
+            mirror_all_wheels=False,
+        )
+        return Mirrorer(args)
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "file:///etc/passwd",
+            "ftp://example.com/evil-1.0.tar.gz",
+        ],
+        ids=["file_scheme", "ftp_scheme"],
+    )
+    def test_download_file_rejects_non_http_schemes(self, mirrorer, url, tmp_path):
+        fileinfo = {"url": url, "hashes": {"sha256": "irrelevant"}}
+        target = os.path.join(tmp_path, "pkg", "evil-1.0.tar.gz")
+
+        with pytest.raises(ValueError, match="unexpected URL scheme"):
+            # pylint: disable=W0212
+            mirrorer._download_file(fileinfo, target, "sha256")  # noqa: SLF001
+
+        assert not os.path.exists(target)
+
+    def test_process_file_rejects_unsafe_filename(self, mirrorer):
+        fileinfo = {
+            "filename": "../../evil-1.0.tar.gz",
+            "url": "https://example.com/evil-1.0.tar.gz",
+            "hashes": {"sha256": "irrelevant"},
+        }
+        requirement = parse_requirement("evil")
+
+        with pytest.raises(ValueError, match="Unsafe filename"):
+            # pylint: disable=W0212
+            mirrorer._process_file(requirement, fileinfo)  # noqa: SLF001
+
+    def test_process_file_rejects_escaping_path(self, mirrorer, monkeypatch):
+        # with is_safe_filename bypassed, the path containment check must still
+        # reject a filename that escapes the package directory
+        monkeypatch.setattr("morgan.is_safe_filename", lambda _filename: True)
+        fileinfo = {
+            "filename": "../../evil-1.0.tar.gz",
+            "url": "https://example.com/evil-1.0.tar.gz",
+            "hashes": {"sha256": "irrelevant"},
+        }
+        requirement = parse_requirement("evil")
+
+        with pytest.raises(ValueError, match="Unsafe file path"):
+            # pylint: disable=W0212
+            mirrorer._process_file(requirement, fileinfo)  # noqa: SLF001

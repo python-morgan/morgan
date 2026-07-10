@@ -562,7 +562,20 @@ class Mirrorer:
         requirement: packaging.requirements.Requirement,
         fileinfo: dict,
     ) -> dict[str, dict[str, packaging.requirements.Requirement]] | None:
-        filepath = os.path.join(self.index_path, requirement.name, fileinfo["filename"])
+        if not is_safe_filename(fileinfo["filename"]):
+            msg = "Unsafe filename {}, refusing to process it".format(
+                fileinfo["filename"],
+            )
+            raise ValueError(msg)
+
+        pkgdir = os.path.realpath(os.path.join(self.index_path, requirement.name))
+        filepath = os.path.join(pkgdir, fileinfo["filename"])
+
+        # verify the resolved path stays within the package's directory
+        if os.path.commonpath((pkgdir, os.path.realpath(filepath))) != pkgdir:
+            msg = f"Unsafe file path {filepath}, refusing to process it"
+            raise ValueError(msg)
+
         hashalg = (
             PREFERRED_HASH_ALG
             if PREFERRED_HASH_ALG in fileinfo["hashes"]
@@ -596,6 +609,14 @@ class Mirrorer:
         target: str,
         hashalg: str,
     ) -> bool:
+        scheme = urllib.parse.urlparse(fileinfo["url"]).scheme
+        if scheme not in ("http", "https"):
+            msg = "Refusing to download {}, unexpected URL scheme {!r}".format(
+                fileinfo["url"],
+                scheme,
+            )
+            raise ValueError(msg)
+
         exphash = fileinfo["hashes"][hashalg]
 
         os.makedirs(os.path.dirname(target), exist_ok=True)
@@ -697,6 +718,25 @@ def parse_interpreter(inp: str) -> tuple[str, str | None]:
             version = f"{version}.{m.group(3)}"
 
     return (intr, version)
+
+
+def is_safe_filename(filename: str) -> bool:
+    """
+    Check that a file name received from a package index is a plain file name
+    that cannot escape its target directory. File names come from index
+    responses, so they must not be trusted: a malicious or compromised index
+    could otherwise use path separators or ".." to write files to arbitrary
+    locations on the file system.
+    """
+
+    if filename in ("", ".", ".."):
+        return False
+
+    # reject path separators ("/", "\\"), the Windows drive and NTFS
+    # alternate-data-stream separator (":") and NUL bytes.
+    # On Windows, a name like "C:evil.tar.gz" is drive-relative and escapes
+    # the join despite having no separator.
+    return not re.search(r"[/\\:\x00]", filename)
 
 
 def parse_requirement(req_string: str) -> packaging.requirements.Requirement:
