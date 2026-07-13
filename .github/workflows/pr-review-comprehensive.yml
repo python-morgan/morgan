@@ -1,11 +1,17 @@
 name: PR Review with Progress Tracking
 
-# This example demonstrates how to use the track_progress feature to get
-# visual progress tracking for PR reviews, similar to v0.x agent mode.
-
+# pull_request_target is used so that PRs from forks have access to secrets
+# and OIDC. This only applies to users with write permissions on the repo.
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, ready_for_review, reopened]
+  # Allows running the review manually for a PR even if author has no write permissions.
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Pull request number to review"
+        required: true
+        type: number
 
 jobs:
   review-with-tracking:
@@ -25,13 +31,13 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
-          # Enable progress tracking
-          track_progress: true
+          # Enable progress tracking (only supported for pull request events)
+          track_progress: ${{ github.event_name == 'pull_request_target' }}
 
           # Your custom review instructions
           prompt: |
             REPO: ${{ github.repository }}
-            PR NUMBER: ${{ github.event.pull_request.number }}
+            PR NUMBER: ${{ inputs.pr_number || github.event.pull_request.number }}
 
             Perform a comprehensive code review with the following focus areas:
 
