@@ -52,6 +52,10 @@ lint = [
 # Version is derived from the latest git tag, e.g. "v0.15.0" -> "0.15.0".
 source = "vcs"
 
+[tool.hatch.version.raw-options]
+# Drop the local "+<hash>" segment; (Test)PyPI rejects local version labels.
+local_scheme = "no-local-version"
+
 [project.urls]
 "Homepage" = "https://github.com/ido50/morgan"
 "Repository" = "https://github.com/ido50/morgan"
