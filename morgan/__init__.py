@@ -7,6 +7,7 @@ import json
 import os
 import os.path
 import re
+import sys
 import tarfile
 import traceback
 import urllib.error
@@ -23,7 +24,6 @@ import packaging.utils
 import packaging.version
 
 from morgan import configurator, metadata, server
-from morgan.__about__ import __version__
 from morgan.registry import GitLabRegistry, LocalRegistry, Registry
 from morgan.utils import (
     Cache,
@@ -32,6 +32,17 @@ from morgan.utils import (
     to_single_dash,
     touch_file,
 )
+
+if sys.version_info < (3, 8):
+    import importlib_metadata as _metadata
+else:
+    from importlib import metadata as _metadata
+
+try:
+    __version__ = _metadata.version("morgan")
+except _metadata.PackageNotFoundError:
+    # Running from a source tree that hasn't been installed.
+    __version__ = "0.0.0+unknown"
 
 PYPI_ADDRESS = "https://pypi.org/simple/"
 PREFERRED_HASH_ALG = "sha256"
