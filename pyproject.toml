@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.10.0"]
+requires = ["hatchling>=1.10.0", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
@@ -49,7 +49,8 @@ lint = [
 ]
 
 [tool.hatch.version]
-path = "morgan/__about__.py"
+# Version is derived from the latest git tag, e.g. "v0.15.0" -> "0.15.0".
+source = "vcs"
 
 [project.urls]
 "Homepage" = "https://github.com/ido50/morgan"
