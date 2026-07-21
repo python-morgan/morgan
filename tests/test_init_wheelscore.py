@@ -3,7 +3,6 @@
 # pylint: disable=missing-function-docstring,missing-class-docstring,protected-access
 # ruff: noqa: SLF001
 
-import argparse
 import os
 from typing import NamedTuple
 
@@ -31,16 +30,13 @@ class TestCalculateScoresForWheel:
         return tmp_path
 
     @pytest.fixture
-    def mirrorer(self, temp_index_path):
-        args = argparse.Namespace(
-            index_path=temp_index_path,
-            index_url="https://example.com/simple/",
-            config=os.path.join(temp_index_path, "morgan.ini"),
-            mirror_all_versions=False,
-            package_type_regex=r"(whl|zip|tar\.gz)",
-            mirror_all_wheels=True,
-            target_url=None,
-            use_pypi_metadata=False,
+    def mirrorer(self, temp_index_path, make_mirror_args):
+        args = make_mirror_args(
+            temp_index_path,
+            os.path.join(temp_index_path, "morgan.ini"),
+            "--index-url",
+            "https://example.com/simple/",
+            "--mirror-all-wheels",
         )
         return Mirrorer(args)
 
