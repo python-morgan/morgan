@@ -30,6 +30,7 @@ from morgan.utils import (
     ListExtendingOrderedDict,
     is_requirement_relevant,
     python_release_version,
+    specifier_mentions_prerelease,
     to_single_dash,
     touch_file,
 )
@@ -72,6 +73,7 @@ class Mirrorer:
         self.mirror_all_wheels: bool = args.mirror_all_wheels
         self.mirror_all_versions: bool = args.mirror_all_versions
         self.package_type_regex: str = args.package_type_regex
+        self.prerelease: bool = args.prerelease
         self.config = configparser.ConfigParser(
             strict=False,
             dict_type=ListExtendingOrderedDict,
@@ -132,7 +134,7 @@ class Mirrorer:
                         ),
                     )
 
-        self._processed_pkgs = Cache()
+        self._processed_pkgs = Cache(allow_prereleases=self.prerelease)
         self.target_registry: Registry = self._find_target_registry(args)
         self.use_pypi_metadata: bool = args.use_pypi_metadata or False
 
@@ -276,7 +278,8 @@ class Mirrorer:
                 traceback.print_exc()
                 continue
 
-        self._processed_pkgs.add(requirement)
+        # files are sorted newest first, so this is the latest selected version
+        self._processed_pkgs.add(requirement, files[0]["version"])
 
         return depdict
 
@@ -370,12 +373,36 @@ class Mirrorer:
         if requirement.specifier is None:
             return files
 
-        # keep only files of the version that satisfies the requirement
-        return list(
-            filter(
-                lambda file: requirement.specifier.contains(file["version"]),
-                files,
-            ),
+        # Keep only files of the version that satisfies the requirement.
+        # prereleases=True is passed explicitly because packaging 26.0
+        # changed the default of contains().
+        matching = [
+            file
+            for file in files
+            if requirement.specifier.contains(file["version"], prereleases=True)
+        ]
+        if self._prereleases_allowed(requirement):
+            return matching
+
+        finals = [file for file in matching if not file["version"].is_prerelease]
+        if finals:
+            return finals
+
+        # use prereleases if no final release satisfies the specifier, as
+        # PEP 440 specifies
+        if matching:
+            print(
+                f"\tNo final release matches {requirement}, using prereleases",
+            )
+        return matching
+
+    def _prereleases_allowed(
+        self,
+        requirement: packaging.requirements.Requirement,
+    ) -> bool:
+        """Return True if prereleases are allowed without the PEP 440 fallback."""
+        return self.prerelease or specifier_mentions_prerelease(
+            requirement.specifier,
         )
 
     def _filter_files_by_environment(self, files: list[dict]) -> list[dict]:
@@ -953,6 +980,18 @@ def create_arg_parser() -> argparse.ArgumentParser:
             "that matches their version specifiers. "
             "Transitive dependencies still mirror only the latest matching release. "
             "(Default: only the latest matching release)"
+        ),
+    )
+    parser.add_argument(
+        "--prerelease",
+        dest="prerelease",
+        action="store_true",
+        help=(
+            "Allow prerelease versions (dev, alpha, beta, rc) to satisfy all "
+            "requirements. "
+            "Without this flag, prereleases are mirrored only when a "
+            "requirement mentions a prerelease version (e.g. 'pkg==2.0.0rc1') "
+            "or no final release matches the requirement."
         ),
     )
     parser.add_argument(

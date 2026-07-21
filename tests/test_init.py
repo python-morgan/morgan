@@ -4,9 +4,12 @@ from __future__ import annotations
 import contextlib
 import email.message
 import hashlib
+import io
+import json
 import os
 import re
 import urllib.error
+import urllib.request
 
 import packaging.requirements
 import packaging.tags
@@ -115,6 +118,7 @@ class TestMirrorer:
         assert mirrorer.envs["test_env"]["sys_platform"] == "linux"
         assert mirrorer.envs["test_env"]["platform_machine"] == "x86_64"
         assert not mirrorer.mirror_all_versions
+        assert not mirrorer.prerelease
 
     def test_server_file_copying(self, temp_index_path, make_mirror_args):
         args = make_mirror_args(
@@ -184,12 +188,18 @@ class TestFilterFiles:
     @pytest.fixture
     def make_mirrorer(self, temp_index_path, make_mirror_args):
         # Return a function that creates mirrorer instances
-        def _make_mirrorer(mirror_all_versions, mirror_all_wheels=False):
+        def _make_mirrorer(
+            mirror_all_versions,
+            mirror_all_wheels=False,
+            prerelease=False,
+        ):
             extra_args = ["--index-url", "https://example.com/simple"]
             if mirror_all_versions:
                 extra_args.append("--mirror-all-versions")
             if mirror_all_wheels:
                 extra_args.append("--mirror-all-wheels")
+            if prerelease:
+                extra_args.append("--prerelease")
             args = make_mirror_args(
                 temp_index_path,
                 os.path.join(temp_index_path, "morgan.ini"),
@@ -214,7 +224,10 @@ class TestFilterFiles:
 
     @pytest.fixture
     def sample_files(self):
+        # the expected versions of the tests below rely on the prerelease
+        # 1.7.0rc1 being excluded by default
         return [
+            self.make_file("sample_package-1.7.0rc1.tar.gz"),
             self.make_file("sample_package-1.6.0.tar.gz"),
             self.make_file("sample_package-1.5.2.tar.gz"),
             self.make_file("sample_package-1.5.1.tar.gz"),
@@ -676,6 +689,163 @@ class TestFilterFiles:
             "sample_package-1.0.0.tar.gz",
         } == set(filenames), f"Wrong packages selected. Got: {filenames}"
 
+    def test_prerelease_flag_includes_prereleases(self, make_mirrorer, sample_files):
+        mirrorer = make_mirrorer(mirror_all_versions=True, prerelease=True)
+
+        filtered_files = self.filter_files(
+            mirrorer,
+            "sample_package>=1.5.0",
+            sample_files,
+        )
+
+        assert self.extract_versions(filtered_files) == [
+            "1.7.0rc1",
+            "1.6.0",
+            "1.5.2",
+            "1.5.1",
+        ]
+
+    @pytest.mark.parametrize(
+        "version_spec",
+        [
+            # the specifier names a prerelease, which allows prereleases
+            "==1.7.0rc1",
+            # === is not counted as naming a prerelease, but no final release
+            # matches the pin, so the PEP 440 fallback selects the prerelease
+            "===1.7.0rc1",
+        ],
+        ids=["version_matching", "arbitrary_equality"],
+    )
+    def test_prerelease_pin_mirrored_without_flag(
+        self,
+        make_mirrorer,
+        sample_files,
+        version_spec,
+    ):
+        mirrorer = make_mirrorer(mirror_all_versions=False)
+
+        filtered_files = self.filter_files(
+            mirrorer,
+            f"sample_package{version_spec}",
+            sample_files,
+        )
+
+        assert self.extract_versions(filtered_files) == ["1.7.0rc1"]
+
+    @pytest.mark.parametrize(
+        "version_spec",
+        [">=1.5.0rc1", ">=1.5,<2.0.0dev"],
+        ids=["prerelease_lower_bound", "prerelease_exclusion_upper_bound"],
+    )
+    def test_specifier_naming_prerelease_allows_prerelease_over_final(
+        self,
+        make_mirrorer,
+        sample_files,
+        version_spec,
+    ):
+        # final releases also satisfy these specifiers, so 1.7.0rc1 is
+        # selected because the specifier names a prerelease and not through
+        # the fallback
+        mirrorer = make_mirrorer(mirror_all_versions=False)
+
+        filtered_files = self.filter_files(
+            mirrorer,
+            f"sample_package{version_spec}",
+            sample_files,
+        )
+
+        assert self.extract_versions(filtered_files) == ["1.7.0rc1"]
+
+    def test_bare_requirement_excludes_prereleases(self, make_mirrorer, sample_files):
+        # an empty SpecifierSet contains prereleases since packaging 26, but
+        # Morgan must still exclude them
+        mirrorer = make_mirrorer(mirror_all_versions=False)
+
+        filtered_files = self.filter_files(mirrorer, "sample_package", sample_files)
+
+        assert self.extract_versions(filtered_files) == ["1.6.0"]
+
+    def test_only_prereleases_available_falls_back_to_prereleases(
+        self,
+        make_mirrorer,
+        capsys,
+    ):
+        # no final release satisfies the requirement because the package has
+        # only published prereleases
+        mirrorer = make_mirrorer(mirror_all_versions=False)
+        files = [
+            self.make_file("sample_package-0.48b0.tar.gz"),
+            self.make_file("sample_package-0.47b0.tar.gz"),
+        ]
+
+        filtered_files = self.filter_files(mirrorer, "sample_package", files)
+
+        assert self.extract_versions(filtered_files) == ["0.48b0"]
+        assert "No final release matches" in capsys.readouterr().out
+
+    def test_prereleases_used_when_no_final_release_satisfies_specifier(
+        self,
+        make_mirrorer,
+    ):
+        # a final release exists but does not satisfy the specifier
+        mirrorer = make_mirrorer(mirror_all_versions=True)
+        files = [
+            self.make_file("sample_package-2.0.0rc1.tar.gz"),
+            self.make_file("sample_package-2.0.0b1.tar.gz"),
+            self.make_file("sample_package-1.0.0.tar.gz"),
+        ]
+
+        filtered_files = self.filter_files(mirrorer, "sample_package>1.0", files)
+
+        assert self.extract_versions(filtered_files) == ["2.0.0rc1", "2.0.0b1"]
+
+    def test_non_matching_prerelease_is_not_used_as_fallback(
+        self,
+        make_mirrorer,
+        capsys,
+    ):
+        # the fallback only considers prereleases that satisfy the specifier
+        mirrorer = make_mirrorer(mirror_all_versions=True)
+        files = [
+            self.make_file("sample_package-2.0.0rc1.tar.gz"),
+        ]
+
+        filtered_files = self.filter_files(mirrorer, "sample_package<1.0", files)
+
+        assert filtered_files is None
+        assert "No final release matches" not in capsys.readouterr().out
+
+    def test_dev_release_treated_as_prerelease(self, make_mirrorer):
+        files = [
+            self.make_file("sample_package-1.0.0.dev1.tar.gz"),
+            self.make_file("sample_package-0.9.0.tar.gz"),
+        ]
+
+        mirrorer = make_mirrorer(mirror_all_versions=False)
+        filtered_files = self.filter_files(mirrorer, "sample_package", files)
+        assert self.extract_versions(filtered_files) == ["0.9.0"]
+
+        mirrorer = make_mirrorer(mirror_all_versions=False, prerelease=True)
+        filtered_files = self.filter_files(mirrorer, "sample_package", files)
+        assert self.extract_versions(filtered_files) == ["1.0.0.dev1"]
+
+    def test_arbitrary_equality_with_non_pep440_version_does_not_raise(
+        self,
+        make_mirrorer,
+        sample_files,
+    ):
+        # the version in a === specifier need not be a valid PEP 440 version,
+        # and such a version must not abort the mirror run
+        mirrorer = make_mirrorer(mirror_all_versions=False)
+
+        filtered_files = self.filter_files(
+            mirrorer,
+            "sample_package===1.0-custom",
+            sample_files,
+        )
+
+        assert filtered_files is None
+
 
 class TestEnvironmentPythonVersion:
     @pytest.fixture
@@ -921,6 +1091,46 @@ class TestMirrorDependencyErrors:
         assert "present-dep" in processed, (
             "Dependencies after a failing one should still be processed"
         )
+
+
+class TestMirrorCache:
+    def test_bound_selecting_prerelease_is_not_hidden_by_cache(
+        self,
+        tmp_path,
+        make_mirror_args,
+        monkeypatch,
+    ):
+        # foo only has prereleases above 2.5, so foo>2.5 selects 3.0b1
+        # through the fallback while the bare foo selects 2.5
+        config_path = os.path.join(tmp_path, "morgan.ini")
+        with open(config_path, "w", encoding="utf-8") as f:
+            f.write("[env.test_env]\npython_version = 3.10\nplatform_tag = .*\n")
+        mirrorer = Mirrorer(make_mirror_args(tmp_path, config_path))
+        index = {
+            "meta": {"api-version": "1.0"},
+            "files": [
+                {"filename": f"foo-{v}.tar.gz", "url": f"foo-{v}.tar.gz", "hashes": {}}
+                for v in ("1.0", "2.5", "3.0b1")
+            ],
+        }
+
+        def fake_urlopen(request, timeout):
+            response = io.BytesIO(json.dumps(index).encode())
+            response.url = request.full_url  # type: ignore[attr-defined]
+            return response
+
+        processed = []
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        monkeypatch.setattr(
+            mirrorer,
+            "_process_file",
+            lambda requirement, fileinfo: processed.append(fileinfo["filename"]),
+        )
+
+        mirrorer.mirror("foo")
+        mirrorer.mirror("foo>2.5")
+
+        assert processed == ["foo-2.5.tar.gz", "foo-3.0b1.tar.gz"]
 
 
 class TestIsSafeFilename:

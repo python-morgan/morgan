@@ -10,6 +10,8 @@ import packaging.version
 
 if TYPE_CHECKING:
     from packaging.requirements import Requirement
+    from packaging.specifiers import SpecifierSet
+    from packaging.version import Version
 
 
 def to_single_dash(filename):
@@ -28,6 +30,29 @@ def to_single_dash(filename):
     # selenium-2.0.dev9429.tar.gz
 
 
+def specifier_mentions_prerelease(specifier: SpecifierSet) -> bool:
+    """Return True if the specifier names a prerelease version.
+
+    For every operator except ===, the result is the same as packaging 24.2
+    and newer give. A version after === is not counted because no final
+    release matches a === pin on a prerelease, so Mirrorer selects that
+    prerelease through the PEP 440 fallback.
+    """
+    # SpecifierSet.prereleases is not used because its result for < and >
+    # differs between packaging 24.0 and 24.2
+    for spec in specifier:
+        if spec.operator in ("===", "!="):
+            continue
+        try:
+            version = packaging.version.Version(spec.version)
+        except packaging.version.InvalidVersion:
+            # spec.version is not a version, for example the wildcard in ==1.*
+            continue
+        if version.is_prerelease:
+            return True
+    return False
+
+
 def python_release_version(value: str) -> str:
     """Return the release part of an environment's Python version.
 
@@ -39,19 +64,38 @@ def python_release_version(value: str) -> str:
 
 
 class Cache:
-    def __init__(self):
+    def __init__(self, *, allow_prereleases: bool = False):
+        self.allow_prereleases = allow_prereleases
+        # str() of every processed requirement
         self.cache: set[str] = set()
+        # maps a package name to the latest version that the last simple-case
+        # requirement for that package selected
+        self.selected_versions: dict[str, Version] = {}
 
     def check(self, req: Requirement) -> bool:
-        if self.is_simple_case(req):
-            return req.name in self.cache
-        return str(req) in self.cache
+        if str(req) in self.cache:
+            return True
+        if not self.is_simple_case(req):
+            return False
+        version = self.selected_versions.get(req.name)
+        if version is None:
+            return False
+        if version.is_prerelease and not self.allow_prereleases:
+            # The recorded version was selected through the PEP 440 fallback
+            # because no final release matched, but req selects a final
+            # release if one satisfies it.
+            return False
+        # A simple-case requirement selects the latest acceptable version
+        # above its lower bound. Every version newer than the recorded one
+        # that satisfies req also satisfied the requirement that selected
+        # it, so if the recorded version satisfies req, it is also the latest
+        # acceptable version for req.
+        return req.specifier.contains(version, prereleases=True)
 
-    def add(self, req: Requirement):
-        if self.is_simple_case(req):
-            self.cache.add(req.name)
-        else:
-            self.cache.add(str(req))
+    def add(self, req: Requirement, version: Version | None = None):
+        self.cache.add(str(req))
+        if version is not None and self.is_simple_case(req):
+            self.selected_versions[req.name] = version
 
     def is_simple_case(self, req: Requirement) -> bool:
         if not req.marker and not req.extras:
@@ -60,7 +104,9 @@ class Cache:
                 return True
             # ruff: noqa: SLF001
             if all(spec.operator in (">", ">=") for spec in specifier._specs):
-                return True
+                # a specifier that names a prerelease can select a different
+                # version than the bare requirement, so it is not a simple case
+                return not specifier_mentions_prerelease(specifier)
         return False
 
 
