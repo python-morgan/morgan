@@ -846,11 +846,8 @@ def mirror(args: argparse.Namespace):
         m.copy_server()
 
 
-def main():  # noqa: C901
-    """
-    Executes the command line interface of Morgan. Use -h for a full list of
-    flags, options and arguments.
-    """
+def create_arg_parser() -> argparse.ArgumentParser:
+    """Create the argument parser for Morgan's command line interface."""
 
     def my_url(arg):
         # url -> url/ without params
@@ -975,6 +972,15 @@ def main():  # noqa: C901
         help="Command to execute",
     )
 
+    return parser
+
+
+def main():  # noqa: C901
+    """
+    Executes the command line interface of Morgan. Use -h for a full list of
+    flags, options and arguments.
+    """
+    parser = create_arg_parser()
     args = parser.parse_args()
 
     # Validate that target-gitlab-project requires target-url
