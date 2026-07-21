@@ -13,6 +13,7 @@
     * [Sample Configuration File](#sample-configuration-file)
     * [Setting Up Multiple Mirrors](#setting-up-multiple-mirrors)
     * [Mirroring From Other Indexes](#mirroring-from-other-indexes)
+    * [Prereleases](#prereleases)
 * [How Does Morgan Resolve Dependencies?](#how-does-morgan-resolve-dependencies)
 * [Limitations](#limitations)
 * [Why Not Use X?](#why-not-use-x)
@@ -177,6 +178,20 @@ morgan serve --index-path /opt/pypi-mirror-2 --config /usr/local/etc/pypi-mirror
 
 To mirror from a package index different than PyPI, simply provide the
 `-I` or `--index-url` flag with the URL of the index.
+
+### Prereleases
+
+Prerelease versions (developmental, alpha, beta and release candidate releases,
+as defined by [PEP 440](https://peps.python.org/pep-0440/#pre-releases)) are
+mirrored only if one of the following applies:
+
+1. The `--prerelease` flag is given to the `mirror` command. This allows
+   prereleases for all packages.
+2. The requirement's specifier mentions a prerelease version, e.g.
+   `==2.0.0rc1` or `>=2.0.0rc1`. This allows prereleases for that requirement
+   only.
+3. No final release satisfies the requirement, e.g. because the package has
+   only published prereleases.
 
 ## How Does Morgan Resolve Dependencies?
 

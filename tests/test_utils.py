@@ -2,10 +2,14 @@ import os
 
 import pytest
 from packaging.requirements import Requirement
+from packaging.specifiers import SpecifierSet
+from packaging.version import Version
 
 from morgan.utils import (
+    Cache,
     filter_relevant_requirements,
     is_requirement_relevant,
+    specifier_mentions_prerelease,
     touch_file,
 )
 
@@ -237,3 +241,88 @@ class TestTouchFile:
         touch_file(str(path), {})
 
         assert path.stat().st_mtime_ns == 1_000_000_000 * 10**9
+
+
+class TestCache:
+    @pytest.mark.parametrize(
+        ("first", "selected", "second"),
+        [
+            ("foo>=1.0", "1.6.0", "foo>=1.7.0rc1"),
+            ("foo>=1.7.0rc1", "1.7.0rc1", "foo"),
+        ],
+        ids=["stable_then_prerelease", "prerelease_then_bare"],
+    )
+    def test_prerelease_specifier_does_not_share_cache_entry(
+        self,
+        first,
+        selected,
+        second,
+    ):
+        cache = Cache()
+        cache.add(Requirement(first), Version(selected))
+
+        assert not cache.check(Requirement(second))
+
+    def test_plain_lower_bounds_share_cache_entry(self):
+        cache = Cache()
+        cache.add(Requirement("foo>=1.0"), Version("2.5"))
+
+        assert cache.check(Requirement("foo>=2.0"))
+        assert cache.check(Requirement("foo"))
+
+    def test_lower_bound_above_selected_version_misses(self):
+        cache = Cache()
+        cache.add(Requirement("foo>=1.0"), Version("2.5"))
+
+        assert not cache.check(Requirement("foo>3.0"))
+
+    def test_prerelease_selected_by_fallback_does_not_share_cache_entry(self):
+        # foo>2.5 selected 3.0b1 through the fallback, but the bare
+        # requirement selects the final release 2.5
+        cache = Cache()
+        cache.add(Requirement("foo>2.5"), Version("3.0b1"))
+
+        assert not cache.check(Requirement("foo"))
+
+    def test_identical_requirement_hits(self):
+        cache = Cache()
+        cache.add(Requirement("foo>2.5"), Version("3.0b1"))
+
+        assert cache.check(Requirement("foo>2.5"))
+
+    def test_recorded_prerelease_hits_when_prereleases_allowed(self):
+        cache = Cache(allow_prereleases=True)
+        cache.add(Requirement("foo>2.5"), Version("3.0b1"))
+
+        assert cache.check(Requirement("foo>=1.0"))
+
+    def test_requirement_added_without_version_only_matches_itself(self):
+        cache = Cache()
+        cache.add(Requirement("foo"))
+
+        assert cache.check(Requirement("foo"))
+        assert not cache.check(Requirement("foo>=1.0"))
+
+
+class TestSpecifierMentionsPrerelease:
+    @pytest.mark.parametrize(
+        ("specifier", "expected"),
+        [
+            (">=1.7.0rc1", True),
+            ("==2.0.0rc1", True),
+            ("~=2.0rc1", True),
+            ("<=2.0rc1", True),
+            (">2.0rc1", True),
+            ("<3.0.0dev", True),
+            (">=1.31.5,<3.0.0dev", True),
+            ("", False),
+            (">=1.0", False),
+            ("==1.*", False),
+            ("!=2.0rc1", False),
+            ("===1.0-custom", False),
+            ("===2.0rc1", False),
+        ],
+    )
+    def test_specifier_mentions_prerelease(self, specifier, expected):
+        # the result must not depend on the installed packaging version
+        assert specifier_mentions_prerelease(SpecifierSet(specifier)) is expected
