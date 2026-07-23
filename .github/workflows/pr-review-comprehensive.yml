@@ -62,6 +62,7 @@ jobs:
 
             Provide detailed feedback using inline comments for specific issues.
             Use top-level comments for general observations or praise.
+            --comment
 
           # Tools for comprehensive PR review
           claude_args: |
