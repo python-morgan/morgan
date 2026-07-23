@@ -14,6 +14,7 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import urllib.parse
 from typing import Any
 
@@ -201,8 +202,12 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 
         self.send_response(200)
         self.send_header("Content-Type", ct)
+        self.send_header("Content-Length", str(path.stat().st_size))
         self.end_headers()
-        self.wfile.write(path.read_bytes())
+        # stream the file instead of reading it into memory, package
+        # distributions can be several gigabytes in size
+        with path.open("rb") as fh:
+            shutil.copyfileobj(fh, self.wfile)
 
 
 def run(
