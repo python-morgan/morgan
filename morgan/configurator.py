@@ -6,12 +6,10 @@ import sys
 import sysconfig
 from collections import OrderedDict
 
-from packaging.version import Version
-
-if Version(platform.python_version()) < Version("3.8"):
+if sys.version_info < (3, 8):
     import importlib_metadata as metadata
 else:
-    from importlib import metadata  # type: ignore[no-redef]
+    from importlib import metadata
 
 
 def generate_env(name: str = "local"):
