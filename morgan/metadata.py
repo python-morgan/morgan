@@ -10,6 +10,7 @@ from typing import IO, Any, Callable, Iterable
 
 import tomli
 from packaging.markers import Marker
+from packaging.markers import Value as MarkerValue
 from packaging.markers import Variable as MarkerVariable
 from packaging.requirements import Requirement
 from packaging.specifiers import SpecifierSet
@@ -298,7 +299,14 @@ class MetadataParser:
         if req.marker is not None:
             # ruff: noqa: SLF001
             for marker in req.marker._markers:
-                if isinstance(marker[0], MarkerVariable) and marker[0].value == "extra":
+                # an element is a (left, operator, right) tuple, a nested list
+                # for a parenthesised group, or the string "and" or "or"
+                if (
+                    isinstance(marker, tuple)
+                    and isinstance(marker[0], MarkerVariable)
+                    and marker[0].value == "extra"
+                    and isinstance(marker[2], (MarkerVariable, MarkerValue))
+                ):
                     extra = marker[2].value
                     break
 
