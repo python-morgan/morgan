@@ -1,5 +1,4 @@
 import io
-from unittest.mock import patch
 
 import pytest
 from packaging.requirements import Requirement
@@ -98,25 +97,9 @@ pytest>=6.0.0
 
     def test_parse_pyproject(self, parser, pyproject_content):
         """Test parsing a pyproject.toml file"""
-        mock_fp = io.BytesIO(pyproject_content)
-        with patch(
-            "tomli.load",
-            return_value={
-                "build-system": {"requires": ["setuptools>=42", "wheel"]},
-                "project": {
-                    "name": "example-package",
-                    "version": "1.0.0",
-                    "requires-python": ">=3.7",
-                    "dependencies": ["requests>=2.0.0"],
-                    "optional-dependencies": {
-                        "web": ["flask>=2.0.0"],
-                        "test": ["pytest>=6.0.0"],
-                    },
-                },
-            },
-        ):
-            # pylint: disable=W0212
-            parser._parse_pyproject(mock_fp)  # noqa: SLF001
+        fp = io.BytesIO(pyproject_content)
+        # pylint: disable=W0212
+        parser._parse_pyproject(fp)  # noqa: SLF001
 
         assert parser.name == "example-package"
         assert parser.version == Version("1.0.0")
