@@ -13,6 +13,7 @@
     * [Sample Configuration File](#sample-configuration-file)
     * [Setting Up Multiple Mirrors](#setting-up-multiple-mirrors)
     * [Mirroring From Other Indexes](#mirroring-from-other-indexes)
+    * [Mirroring Only the Listed Requirements](#mirroring-only-the-listed-requirements)
 * [How Does Morgan Resolve Dependencies?](#how-does-morgan-resolve-dependencies)
 * [Limitations](#limitations)
 * [Why Not Use X?](#why-not-use-x)
@@ -46,7 +47,7 @@ the mirror instead of pypi.org, which they can't access anyway.
 - Package index contains a **configuration file** that lists **markers** for
   different client **environments** and a list of **package requirement strings** as per [PEP 508](https://peps.python.org/pep-0508/).
 - Mirrorer automatically and **recursively mirrors dependencies** of all direct
-  requirements.
+  requirements. This can be turned off with `--no-deps`.
 - Only mirrors **optional dependencies** if they were part of the requirement
   strings (a.k.a "extras"), or are relevant to the environment markers. This is
   true for direct requirements and for dependencies of dependencies.
@@ -177,6 +178,18 @@ morgan serve --index-path /opt/pypi-mirror-2 --config /usr/local/etc/pypi-mirror
 
 To mirror from a package index different than PyPI, simply provide the
 `-I` or `--index-url` flag with the URL of the index.
+
+### Mirroring Only the Listed Requirements
+
+Morgan also mirrors the latest matching version of every dependency, even if
+the `[requirements]` section pins that dependency to another version. If the
+section already is a complete set of pinned versions, for example one
+generated from a lock file, provide the `--no-deps` flag to mirror only the
+listed requirements.
+
+Morgan then does not mirror the build requirements of source distributions
+either, such as setuptools or hatchling. Add them to `[requirements]` if the
+clients have to build a package from source.
 
 ## How Does Morgan Resolve Dependencies?
 
