@@ -6,6 +6,7 @@ from collections import OrderedDict
 from typing import TYPE_CHECKING, Iterable
 
 import dateutil.parser  # type: ignore[import-untyped]
+import packaging.version
 
 if TYPE_CHECKING:
     from packaging.requirements import Requirement
@@ -25,6 +26,16 @@ def to_single_dash(filename):
         filename = filename[: m.start() + 1] + s2
     return filename
     # selenium-2.0.dev9429.tar.gz
+
+
+def python_release_version(value: str) -> str:
+    """Return the release part of an environment's Python version.
+
+    "3.14.0rc1" becomes "3.14.0" and "3.13.0a0+local" becomes "3.13.0".
+    Raises packaging.version.InvalidVersion if the value is not a valid
+    version.
+    """
+    return packaging.version.Version(value).base_version
 
 
 class Cache:
