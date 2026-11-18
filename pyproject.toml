@@ -41,7 +41,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest~=7.1.3"]
+test = ["pytest>=7.3.2"]
 lint = [
     "ruff~=0.15.0",
     "mypy~=1.19.1",
