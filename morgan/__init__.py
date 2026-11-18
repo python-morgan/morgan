@@ -199,7 +199,12 @@ class Mirrorer:
         requirement: packaging.requirements.Requirement,
         required_by: packaging.requirements.Requirement | None = None,
     ) -> dict | None:
-        if self._processed_pkgs.check(requirement):
+        # Ignore the cache for a requirement that mirrors all matching
+        # versions, because the cache does not record whether an earlier
+        # requirement for the same package mirrored all matching versions or
+        # only the latest one.
+        ignore_cache = self.mirror_all_versions and required_by is None
+        if not ignore_cache and self._processed_pkgs.check(requirement):
             return None
 
         # Display the cause of 'Skipping...'
