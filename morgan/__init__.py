@@ -828,7 +828,10 @@ def mirror(args: argparse.Namespace):
         msg = f"Config file {args.config} has no [requirements] section"
         raise ValueError(msg)
     for package in m.config["requirements"]:
-        reqs = m.config["requirements"][package].splitlines()
+        # The multiline form below starts with a blank line, which would
+        # mirror the latest version of the package.
+        reqs = [req.strip() for req in m.config["requirements"][package].splitlines()]
+        reqs = [req for req in reqs if req]
         if not reqs:
             # empty requirements
             # morgan =
@@ -840,7 +843,7 @@ def mirror(args: argparse.Namespace):
             #   >=2
             #   [brotli]  # noqa: ERA001
             for req in reqs:
-                m.mirror(f"{package}{req.strip()}")
+                m.mirror(f"{package}{req}")
 
     if not args.skip_server_copy:
         m.copy_server()
