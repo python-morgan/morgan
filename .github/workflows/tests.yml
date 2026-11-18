@@ -44,6 +44,34 @@ jobs:
         run: |
           pytest
 
+  # Check if the package lower bounds still work with the oldest (3.7 + 3.8)
+  # and newest Python versions
+  pytest-lowest-deps:
+    strategy:
+      matrix:
+        include:
+          - python-version: "3.7"
+            platform-version: "ubuntu-22.04"
+          - python-version: "3.8"
+            platform-version: "ubuntu-24.04"
+          - python-version: "3.x"
+            platform-version: "ubuntu-26.04"
+    runs-on: ${{ matrix.platform-version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Install lowest allowed dependency versions
+        run: |
+          uv pip install --system --resolution lowest-direct .[test]
+      - name: Test with pytest
+        run: |
+          pytest
+
   ruff:
     runs-on: ubuntu-latest
     steps:
