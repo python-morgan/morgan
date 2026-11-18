@@ -1,7 +1,13 @@
+import os
+
 import pytest
 from packaging.requirements import Requirement
 
-from morgan.utils import filter_relevant_requirements, is_requirement_relevant
+from morgan.utils import (
+    filter_relevant_requirements,
+    is_requirement_relevant,
+    touch_file,
+)
 
 
 class TestEnvironmentEvaluation:
@@ -208,3 +214,26 @@ class TestEnvironmentEvaluation:
         filtered = filter_relevant_requirements(requirements, environments)
 
         assert len(filtered) == 2
+
+
+class TestTouchFile:
+    def test_sets_mtime_to_upload_time(self, tmp_path):
+        """The mtime is set from PyPI's upload-time, parsed by python-dateutil"""
+        path = tmp_path / "package-1.0.0.tar.gz"
+        path.write_bytes(b"")
+
+        touch_file(str(path), {"upload-time": "2025-05-28T18:46:29.349478Z"})
+
+        # 2025-05-28 18:46:29.349478 UTC; 2 s tolerance because mtime
+        # resolution differs between filesystems
+        assert path.stat().st_mtime == pytest.approx(1748457989.349478, abs=2)
+
+    def test_without_upload_time_leaves_mtime(self, tmp_path):
+        """Files without upload-time keep their mtime"""
+        path = tmp_path / "package-1.0.0.tar.gz"
+        path.write_bytes(b"")
+        os.utime(path, (1_000_000_000, 1_000_000_000))
+
+        touch_file(str(path), {})
+
+        assert path.stat().st_mtime_ns == 1_000_000_000 * 10**9
