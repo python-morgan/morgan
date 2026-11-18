@@ -274,6 +274,7 @@ class TestMirrorerPyPIMetadata:
         args.config = "morgan.ini"
         args.target_url = None
         args.use_pypi_metadata = True
+        args.no_deps = False
         return args
 
     @pytest.fixture

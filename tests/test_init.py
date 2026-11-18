@@ -5,8 +5,11 @@ import argparse
 import contextlib
 import email.message
 import hashlib
+import json
 import os
+import sys
 import urllib.error
+import zipfile
 
 import packaging.requirements
 import packaging.utils
@@ -979,3 +982,235 @@ class TestMirrorRequirementLines:
             "mirror() must be called once for every non-empty line, and not "
             "for an empty line"
         )
+
+
+class _FakeResponse:
+    """Replaces the HTTP response that urllib.request.urlopen returns."""
+
+    def __init__(self, url, body):
+        self.url = url
+        self._body = body
+
+    def read(self):
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc_info):
+        return None
+
+
+class _FakeMetadata:
+    """Replaces metadata.MetadataParser and returns fixed dependencies."""
+
+    def __init__(self, deps):
+        self._deps = deps
+
+    def dependencies(self, extras, envs):
+        return {parse_requirement(dep) for dep in self._deps}
+
+
+# The versions of each package that the fake index in TestNoDeps serves.
+NO_DEPS_INDEX = {
+    "bar": ["1.0"],
+    "foo": ["2.0", "2.1"],
+}
+# The dependencies that each package declares in TestNoDeps.
+NO_DEPS_DEPENDENCIES = {
+    "bar": ["foo>=2.0"],
+    "foo": [],
+}
+
+
+class TestNoDeps:
+    @pytest.fixture
+    def config_path(self, tmp_path):
+        config_path = os.path.join(tmp_path, "morgan.ini")
+        with open(config_path, "w", encoding="utf-8") as f:
+            f.write(
+                """
+                [env.test_env]
+                python_version = 3.10
+                sys_platform = linux
+                platform_machine = x86_64
+
+                [requirements]
+                bar = ==1.0
+                foo = ==2.0
+                """,
+            )
+        return config_path
+
+    @pytest.fixture
+    def make_args(self, tmp_path, config_path):
+        def _make_args(**overrides):
+            kwargs = {
+                "index_path": str(tmp_path),
+                "index_url": PYPI_ADDRESS,
+                "config": config_path,
+                "mirror_all_versions": False,
+                "package_type_regex": r"(whl|zip|tar\.gz)",
+                "mirror_all_wheels": False,
+                "target_url": None,
+                "use_pypi_metadata": False,
+                "skip_server_copy": True,
+            }
+            kwargs.update(overrides)
+            return argparse.Namespace(**kwargs)
+
+        return _make_args
+
+    @pytest.fixture
+    def downloads(self, monkeypatch):
+        """
+        Replace the index, the download and the metadata parser with fakes
+        that serve the packages in NO_DEPS_INDEX. Return the list that
+        collects the name of every file the mirrorer downloads.
+        """
+        downloaded = []
+
+        def fake_urlopen(request, timeout=None):
+            name = request.full_url.rstrip("/").rsplit("/", 1)[-1]
+            files = [
+                {
+                    "filename": f"{name}-{version}-py3-none-any.whl",
+                    "url": f"{name}-{version}-py3-none-any.whl",
+                    "hashes": {"sha256": "0" * 64},
+                }
+                for version in NO_DEPS_INDEX[name]
+            ]
+            body = json.dumps(
+                {"meta": {"api-version": "1.0"}, "name": name, "files": files},
+            ).encode()
+            return _FakeResponse(request.full_url, body)
+
+        def fake_download_file(_self, fileinfo, target, hashalg):
+            downloaded.append(fileinfo["filename"])
+            return True
+
+        def fake_extract_metadata_from_file(_self, filepath):
+            name = os.path.basename(filepath).split("-", 1)[0]
+            return _FakeMetadata(NO_DEPS_DEPENDENCIES[name])
+
+        monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+        monkeypatch.setattr(Mirrorer, "_download_file", fake_download_file)
+        monkeypatch.setattr(
+            Mirrorer,
+            "_extract_metadata_from_file",
+            fake_extract_metadata_from_file,
+        )
+        return downloaded
+
+    @staticmethod
+    def make_fileinfo(filename):
+        return {
+            "filename": filename,
+            "url": f"https://example.com/{filename}",
+            "hashes": {"sha256": "0" * 64},
+            "version": packaging.version.Version("1.0"),
+        }
+
+    @pytest.mark.parametrize(
+        ("no_deps", "expected"),
+        [
+            (
+                True,
+                ["bar-1.0-py3-none-any.whl", "foo-2.0-py3-none-any.whl"],
+            ),
+            (
+                False,
+                [
+                    "bar-1.0-py3-none-any.whl",
+                    "foo-2.0-py3-none-any.whl",
+                    "foo-2.1-py3-none-any.whl",
+                ],
+            ),
+        ],
+        ids=["no_deps", "with_deps"],
+    )
+    def test_mirror_only_listed_requirements(
+        self,
+        make_args,
+        downloads,
+        no_deps,
+        expected,
+    ):
+        morgan.mirror(make_args(no_deps=no_deps))
+
+        assert sorted(downloads) == expected
+
+    def test_dependencies_followed_without_attribute(self, make_args, downloads):
+        # library callers may build the Namespace without no_deps
+        morgan.mirror(make_args())
+
+        assert "foo-2.1-py3-none-any.whl" in downloads
+
+    def test_metadata_file_is_written(self, make_args, tmp_path, monkeypatch):
+        filename = "x-1.0-py3-none-any.whl"
+        pkgdir = os.path.join(tmp_path, "x")
+        os.makedirs(pkgdir)
+        filepath = os.path.join(pkgdir, filename)
+        with zipfile.ZipFile(filepath, "w") as whl:
+            whl.writestr(
+                "x-1.0.dist-info/METADATA",
+                "Metadata-Version: 2.1\n"
+                "Name: x\n"
+                "Version: 1.0\n"
+                "Requires-Dist: foo>=2.0\n",
+            )
+
+        mirrorer = Mirrorer(make_args(no_deps=True))
+        monkeypatch.setattr(mirrorer, "_download_file", lambda *_args: True)
+
+        # pylint: disable=W0212
+        result = mirrorer._process_file(  # noqa: SLF001
+            parse_requirement("x==1.0"),
+            self.make_fileinfo(filename),
+        )
+
+        assert result is None
+        assert os.path.isfile(f"{filepath}.metadata")
+
+    def test_no_pypi_metadata_request(self, make_args, monkeypatch):
+        mirrorer = Mirrorer(make_args(no_deps=True, use_pypi_metadata=True))
+        monkeypatch.setattr(mirrorer, "_download_file", lambda *_args: True)
+        pypi_requests = []
+
+        def fake_extract_metadata_from_pypi(package, version):
+            pypi_requests.append(package)
+            return _FakeMetadata(["foo>=2.0"])
+
+        monkeypatch.setattr(
+            mirrorer,
+            "_extract_metadata_from_pypi",
+            fake_extract_metadata_from_pypi,
+        )
+
+        # pylint: disable=W0212
+        result = mirrorer._process_file(  # noqa: SLF001
+            parse_requirement("x==1.0"),
+            self.make_fileinfo("x-1.0-py3-none-any.whl"),
+        )
+
+        assert result is None
+        assert pypi_requests == []
+
+    @pytest.mark.parametrize(
+        ("extra_argv", "expected"),
+        [([], False), (["--no-deps"], True)],
+        ids=["without_flag", "with_flag"],
+    )
+    def test_cli_flag(self, config_path, tmp_path, monkeypatch, extra_argv, expected):
+        captured: list[argparse.Namespace] = []
+        monkeypatch.setattr(morgan, "mirror", captured.append)
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["morgan", "-i", str(tmp_path), *extra_argv, "mirror"],
+        )
+
+        morgan.main()
+
+        assert len(captured) == 1
+        assert captured[0].no_deps is expected
