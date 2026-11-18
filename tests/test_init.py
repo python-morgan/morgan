@@ -311,6 +311,15 @@ class TestFilterFiles:
 
         return [str(file["version"]) for file in files]
 
+    def filter_files(self, mirrorer, requirement_string, files, required_by=None):
+        requirement = parse_requirement(requirement_string)
+        # pylint: disable=W0212
+        return mirrorer._filter_files(  # noqa: SLF001
+            requirement=requirement,
+            required_by=required_by,
+            files=files,
+        )
+
     @pytest.mark.parametrize(
         ("version_spec", "expected_versions"),
         [
@@ -332,15 +341,11 @@ class TestFilterFiles:
         mirrorer = make_mirrorer(
             mirror_all_versions=True,
         )
-        requirement = packaging.requirements.Requirement(
-            f"sample_package{version_spec}",
-        )
 
-        # pylint: disable=W0212
-        filtered_files = mirrorer._filter_files(  # noqa: SLF001
-            requirement=requirement,
-            required_by=None,
-            files=sample_files,
+        filtered_files = self.filter_files(
+            mirrorer,
+            f"sample_package{version_spec}",
+            sample_files,
         )
 
         assert self.extract_versions(filtered_files) == expected_versions
@@ -364,15 +369,11 @@ class TestFilterFiles:
     ):
         """Test that file filtering correctly handles different version specifications."""
         mirrorer = make_mirrorer(mirror_all_versions=False)
-        requirement = packaging.requirements.Requirement(
-            f"sample_package{version_spec}",
-        )
 
-        # pylint: disable=W0212
-        filtered_files = mirrorer._filter_files(  # noqa: SLF001
-            requirement=requirement,
-            required_by=None,
-            files=sample_files,
+        filtered_files = self.filter_files(
+            mirrorer,
+            f"sample_package{version_spec}",
+            sample_files,
         )
 
         assert self.extract_versions(filtered_files) == expected_versions
@@ -549,15 +550,11 @@ class TestFilterFiles:
     ):
         """Test that file filtering correctly handles different version specifications."""
         mirrorer = make_mirrorer(mirror_all_versions=True)
-        requirement = packaging.requirements.Requirement(
-            f"sample_package{version_spec}",
-        )
 
-        # pylint: disable=W0212
-        filtered_files = mirrorer._filter_files(  # noqa: SLF001
-            requirement=requirement,
-            required_by=None,
-            files=sample_wheels,
+        filtered_files = self.filter_files(
+            mirrorer,
+            f"sample_package{version_spec}",
+            sample_wheels,
         )
 
         assert set(self.extract_versions(filtered_files)) == set(expected_versions)
@@ -581,15 +578,11 @@ class TestFilterFiles:
     ):
         """Test that file filtering correctly handles different version specifications."""
         mirrorer = make_mirrorer(mirror_all_versions=False)
-        requirement = packaging.requirements.Requirement(
-            f"sample_package{version_spec}",
-        )
 
-        # pylint: disable=W0212
-        filtered_files = mirrorer._filter_files(  # noqa: SLF001
-            requirement=requirement,
-            required_by=None,
-            files=sample_wheels,
+        filtered_files = self.filter_files(
+            mirrorer,
+            f"sample_package{version_spec}",
+            sample_wheels,
         )
 
         assert set(self.extract_versions(filtered_files)) == set(expected_versions)
@@ -613,15 +606,11 @@ class TestFilterFiles:
     ):
         """Test that file filtering correctly handles different version specifications."""
         mirrorer = make_mirrorer(mirror_all_versions=True, mirror_all_wheels=True)
-        requirement = packaging.requirements.Requirement(
-            f"sample_package{version_spec}",
-        )
 
-        # pylint: disable=W0212
-        filtered_files = mirrorer._filter_files(  # noqa: SLF001
-            requirement=requirement,
-            required_by=None,
-            files=sample_wheels,
+        filtered_files = self.filter_files(
+            mirrorer,
+            f"sample_package{version_spec}",
+            sample_wheels,
         )
 
         assert set(self.extract_versions(filtered_files)) == set(expected_versions)
@@ -636,16 +625,10 @@ class TestFilterFiles:
     ):
         """Check that no incompatible wheel or sdist is being mirrored when multiple versions are available."""
         mirrorer = make_mirrorer(mirror_all_versions=False)
-        requirement = packaging.requirements.Requirement("sample_package>=1.0")
 
         files = sample_package_files
 
-        # pylint: disable=W0212
-        filtered_files = mirrorer._filter_files(  # noqa: SLF001
-            requirement=requirement,
-            required_by=None,
-            files=files,
-        )
+        filtered_files = self.filter_files(mirrorer, "sample_package>=1.0", files)
 
         filenames = {f["filename"] for f in filtered_files}
         assert {
@@ -664,14 +647,8 @@ class TestFilterFiles:
         v1_whl, _, v2_whl, v2_tar = sample_package_files
 
         files = [v1_whl, v2_whl, v2_tar]
-        requirement = packaging.requirements.Requirement("sample_package>=1.0")
 
-        # pylint: disable=W0212
-        filtered_files = mirrorer._filter_files(  # noqa: SLF001
-            requirement=requirement,
-            required_by=None,
-            files=files,
-        )
+        filtered_files = self.filter_files(mirrorer, "sample_package>=1.0", files)
 
         filenames = {f["filename"] for f in filtered_files}
         assert {
@@ -689,14 +666,8 @@ class TestFilterFiles:
         _, v1_tar, v2_whl, v2_tar = sample_package_files
 
         files = [v1_tar, v2_whl, v2_tar]
-        requirement = packaging.requirements.Requirement("sample_package>=1.0")
 
-        # pylint: disable=W0212
-        filtered_files = mirrorer._filter_files(  # noqa: SLF001
-            requirement=requirement,
-            required_by=None,
-            files=files,
-        )
+        filtered_files = self.filter_files(mirrorer, "sample_package>=1.0", files)
 
         filenames = {f["filename"] for f in filtered_files}
         assert {
