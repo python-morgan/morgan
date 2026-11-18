@@ -29,6 +29,7 @@ from morgan.utils import (
     Cache,
     ListExtendingOrderedDict,
     is_requirement_relevant,
+    python_release_version,
     to_single_dash,
     touch_file,
 )
@@ -87,11 +88,38 @@ class Mirrorer:
                 env["platform_version"] = ""
                 env["implementation_version"] = ""
                 env["extra"] = ""
-                self.envs[m.group(1)] = dict(env)
-                if "python_full_version" in env:
-                    self._supported_pyversions.append(env["python_full_version"])
+                marker_env = dict(env)
+                # A CPython built from an untagged commit reports a version
+                # that ends in "+", such as 3.13.0a0+. packaging 24.0 raises
+                # InvalidVersion when it evaluates a marker against such a
+                # version, whereas packaging 24.2 and newer append "local" to
+                # it first.
+                if marker_env.get("python_full_version", "").endswith("+"):
+                    marker_env["python_full_version"] += "local"
+                self.envs[m.group(1)] = marker_env
+                # Both keys are validated because markers are evaluated
+                # against them. File matching compares only the release part
+                # of the environment's Python version, like pip does for the
+                # running interpreter.
+                release_versions = {}
+                for pykey in ("python_version", "python_full_version"):
+                    if pykey not in env:
+                        continue
+                    try:
+                        release_versions[pykey] = python_release_version(
+                            marker_env[pykey],
+                        )
+                    except packaging.version.InvalidVersion as e:
+                        msg = f"Invalid {pykey} {env[pykey]!r} in section [{key}]"
+                        raise ValueError(msg) from e
+                if "python_full_version" in release_versions:
+                    self._supported_pyversions.append(
+                        release_versions["python_full_version"],
+                    )
                 else:
-                    self._supported_pyversions.append(env["python_version"])
+                    self._supported_pyversions.append(
+                        release_versions["python_version"],
+                    )
                 if "platform_tag" in env:
                     self._supported_platforms.append(re.compile(env["platform_tag"]))
                 else:
@@ -465,6 +493,7 @@ class Mirrorer:
             req = fileinfo["requires-python"] = re.sub(r"([0-9])\.?\*", r"\1", req)
             try:
                 spec_set = packaging.specifiers.SpecifierSet(req)
+                # supported_pyversions holds release versions (see __init__)
                 for supported_python in supported_pyversions:
                     if not spec_set.contains(supported_python):
                         # file does not support the Python version of one of our

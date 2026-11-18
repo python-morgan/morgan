@@ -5,9 +5,11 @@ import contextlib
 import email.message
 import hashlib
 import os
+import re
 import urllib.error
 
 import packaging.requirements
+import packaging.tags
 import packaging.utils
 import packaging.version
 import pytest
@@ -673,6 +675,194 @@ class TestFilterFiles:
         assert {
             "sample_package-1.0.0.tar.gz",
         } == set(filenames), f"Wrong packages selected. Got: {filenames}"
+
+
+class TestEnvironmentPythonVersion:
+    @pytest.fixture
+    def make_mirrorer(self, tmp_path, make_mirror_args):
+        # Return a function that creates a mirrorer whose single environment
+        # has the given python_full_version and python_version
+        def _make_mirrorer(python_full_version, python_version="3.14"):
+            config_path = os.path.join(tmp_path, "morgan.ini")
+            with open(config_path, "w", encoding="utf-8") as f:
+                f.write(
+                    f"""
+                    [env.test_env]
+                    python_version = {python_version}
+                    python_full_version = {python_full_version}
+                    sys_platform = linux
+                    platform_machine = x86_64
+                    platform_tag = manylinux.*_x86_64
+                    """,
+                )
+            return Mirrorer(make_mirror_args(tmp_path, config_path))
+
+        return _make_mirrorer
+
+    @staticmethod
+    def matches(mirrorer, fileinfo):
+        # pylint: disable=W0212
+        return Mirrorer._matches_environments(  # noqa: SLF001
+            fileinfo,
+            mirrorer._supported_pyversions,  # noqa: SLF001
+            mirrorer._supported_platforms,  # noqa: SLF001
+        )
+
+    @pytest.mark.parametrize(
+        ("fileinfo", "expected"),
+        [
+            # wheel built for the Python minor version of the environment
+            (
+                {
+                    "filename": (
+                        "sample_package-1.0.0-cp314-cp314-manylinux_2_17_x86_64.whl"
+                    ),
+                    "tags": [
+                        packaging.tags.Tag("cp314", "cp314", "manylinux_2_17_x86_64"),
+                    ],
+                },
+                True,
+            ),
+            # requires-python naming the Python minor version of the environment
+            (
+                {
+                    "filename": "sample_package-1.0.0.tar.gz",
+                    "requires-python": ">=3.14",
+                },
+                True,
+            ),
+            # requires-python naming a newer Python than that of the environment
+            (
+                {
+                    "filename": "sample_package-1.0.0.tar.gz",
+                    "requires-python": ">=3.15",
+                },
+                False,
+            ),
+            # requires-python satisfied by any recent Python
+            (
+                {
+                    "filename": "sample_package-1.0.0.tar.gz",
+                    "requires-python": ">=3.8",
+                },
+                True,
+            ),
+            # wheel tagged cp38, which Morgan accepts for CPython 3.8 and newer
+            (
+                {
+                    "filename": "sample_package-1.0.0-cp38-none-any.whl",
+                    "tags": [packaging.tags.Tag("cp38", "none", "any")],
+                },
+                True,
+            ),
+        ],
+        ids=[
+            "cp314_wheel",
+            "requires_python_3_14",
+            "requires_python_3_15",
+            "requires_python_3_8",
+            "cp38_wheel",
+        ],
+    )
+    def test_prerelease_env_python_matches_as_release(
+        self,
+        make_mirrorer,
+        fileinfo,
+        expected,
+    ):
+        # python_full_version in the configuration may name a prerelease, for
+        # example when generate_env wrote it on a release candidate
+        # interpreter. Only its release part is compared, so 3.14.0rc1 is
+        # compared as 3.14.0.
+        mirrorer = make_mirrorer("3.14.0rc1")
+
+        assert self.matches(mirrorer, fileinfo) is expected
+
+    @pytest.mark.parametrize(
+        ("python_full_version", "expected"),
+        [
+            # release candidate interpreter
+            ("3.14.0rc1", "3.14.0"),
+            # CPython development build
+            ("3.13.0a0+", "3.13.0"),
+        ],
+        ids=["release_candidate", "dev_build"],
+    )
+    def test_env_python_reduced_to_release_version(
+        self,
+        make_mirrorer,
+        python_full_version,
+        expected,
+    ):
+        mirrorer = make_mirrorer(python_full_version)
+
+        # pylint: disable=W0212
+        assert mirrorer._supported_pyversions == [expected]  # noqa: SLF001
+
+    @pytest.mark.parametrize(
+        ("marker", "expected"),
+        [
+            ('python_full_version >= "3.8"', True),
+            ('python_full_version < "3.13"', False),
+        ],
+        ids=["satisfied", "not_satisfied"],
+    )
+    def test_dev_build_env_python_evaluates_markers(
+        self,
+        make_mirrorer,
+        marker,
+        expected,
+    ):
+        # packaging 24.0 raises InvalidVersion when it evaluates a marker
+        # against 3.13.0a0+
+        mirrorer = make_mirrorer("3.13.0a0+", python_version="3.13")
+        requirement = packaging.requirements.Requirement(f"sample_package; {marker}")
+
+        assert mirrorer.envs["test_env"]["python_full_version"] == "3.13.0a0+local"
+        assert (
+            morgan.utils.is_requirement_relevant(requirement, mirrorer.envs.values())
+            is expected
+        )
+
+    @pytest.mark.parametrize(
+        "python_full_version",
+        ["3.1O", "3.13.0a0++"],
+        ids=["typo", "double_plus"],
+    )
+    def test_invalid_python_full_version_raises(
+        self,
+        make_mirrorer,
+        python_full_version,
+    ):
+        with pytest.raises(
+            ValueError,
+            match=rf"^Invalid python_full_version {re.escape(repr(python_full_version))}"
+            r" in section \[env\.test_env\]$",
+        ):
+            make_mirrorer(python_full_version)
+
+    @pytest.mark.parametrize(
+        "python_version",
+        [
+            "3.1O",
+            "",
+            # a trailing "+" is accepted only in python_full_version
+            "3.13+",
+        ],
+        ids=["typo", "empty", "plus"],
+    )
+    def test_invalid_python_version_raises_with_valid_full_version(
+        self,
+        make_mirrorer,
+        python_version,
+    ):
+        # python_version is used for marker evaluation even when
+        # python_full_version is given, so it is validated too
+        with pytest.raises(
+            ValueError,
+            match=rf"^Invalid python_version {re.escape(repr(python_version))} in ",
+        ):
+            make_mirrorer("3.14.0", python_version=python_version)
 
 
 class TestMirrorDependencyErrors:
