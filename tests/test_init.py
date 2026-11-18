@@ -1094,43 +1094,142 @@ class TestMirrorDependencyErrors:
 
 
 class TestMirrorCache:
-    def test_bound_selecting_prerelease_is_not_hidden_by_cache(
-        self,
-        tmp_path,
-        make_mirror_args,
-        monkeypatch,
-    ):
-        # foo only has prereleases above 2.5, so foo>2.5 selects 3.0b1
-        # through the fallback while the bare foo selects 2.5
+    @pytest.fixture
+    def make_mirrorer(self, tmp_path, make_mirror_args, monkeypatch):
+        """Return a factory for a Mirrorer that uses a fake index.
+
+        Processing a file of bar reports the dependency bar_requires. The
+        factory returns the Mirrorer, the names of the processed files and the
+        names of the packages requested from the index.
+        """
         config_path = os.path.join(tmp_path, "morgan.ini")
         with open(config_path, "w", encoding="utf-8") as f:
             f.write("[env.test_env]\npython_version = 3.10\nplatform_tag = .*\n")
-        mirrorer = Mirrorer(make_mirror_args(tmp_path, config_path))
-        index = {
-            "meta": {"api-version": "1.0"},
-            "files": [
-                {"filename": f"foo-{v}.tar.gz", "url": f"foo-{v}.tar.gz", "hashes": {}}
-                for v in ("1.0", "2.5", "3.0b1")
-            ],
-        }
+        processed: list[str] = []
+        requested: list[str] = []
 
-        def fake_urlopen(request, timeout):
-            response = io.BytesIO(json.dumps(index).encode())
-            response.url = request.full_url  # type: ignore[attr-defined]
-            return response
+        def _make(*extra_args, versions=None, bar_requires="foo>=1.0"):
+            if versions is None:
+                versions = {"foo": ("1.0", "2.0", "2.5"), "bar": ("1.0",)}
 
-        processed = []
-        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
-        monkeypatch.setattr(
-            mirrorer,
-            "_process_file",
-            lambda requirement, fileinfo: processed.append(fileinfo["filename"]),
+            def fake_urlopen(request, timeout):
+                name = request.full_url.rstrip("/").rsplit("/", 1)[-1]
+                requested.append(name)
+                index = {
+                    "meta": {"api-version": "1.0"},
+                    "files": [
+                        {
+                            "filename": f"{name}-{v}.tar.gz",
+                            "url": f"{name}-{v}.tar.gz",
+                            "hashes": {},
+                        }
+                        for v in versions[name]
+                    ],
+                }
+                response = io.BytesIO(json.dumps(index).encode())
+                response.url = request.full_url  # type: ignore[attr-defined]
+                return response
+
+            def fake_process_file(requirement, fileinfo):
+                processed.append(fileinfo["filename"])
+                if requirement.name != "bar":
+                    return None
+                return {
+                    "foo": {
+                        "requirement": parse_requirement(bar_requires),
+                        "required_by": requirement,
+                    },
+                }
+
+            monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+            mirrorer = Mirrorer(make_mirror_args(tmp_path, config_path, *extra_args))
+            monkeypatch.setattr(mirrorer, "_process_file", fake_process_file)
+            return mirrorer, processed, requested
+
+        return _make
+
+    def test_bound_selecting_prerelease_is_not_hidden_by_cache(self, make_mirrorer):
+        # foo only has prereleases above 2.5, so foo>2.5 selects 3.0b1
+        # through the fallback while the bare foo selects 2.5
+        mirrorer, processed, _ = make_mirrorer(
+            versions={"foo": ("1.0", "2.5", "3.0b1")},
         )
 
         mirrorer.mirror("foo")
         mirrorer.mirror("foo>2.5")
 
         assert processed == ["foo-2.5.tar.gz", "foo-3.0b1.tar.gz"]
+
+    @pytest.mark.parametrize(
+        "bar_requires",
+        [
+            # the version that this dependency records satisfies the
+            # top-level requirement foo
+            "foo>=1.0",
+            # this dependency is the same string as the top-level requirement
+            "foo",
+        ],
+    )
+    def test_all_versions_of_toplevel_requirement_mirrored_after_dependency(
+        self,
+        make_mirrorer,
+        bar_requires,
+    ):
+        mirrorer, processed, _ = make_mirrorer("-a", bar_requires=bar_requires)
+
+        mirrorer.mirror("bar")
+        mirrorer.mirror("foo")
+
+        assert processed == [
+            "bar-1.0.tar.gz",
+            "foo-2.5.tar.gz",
+            "foo-2.5.tar.gz",
+            "foo-2.0.tar.gz",
+            "foo-1.0.tar.gz",
+        ]
+
+    def test_all_versions_of_toplevel_requirement_mirrored_after_toplevel(
+        self,
+        make_mirrorer,
+    ):
+        mirrorer, processed, _ = make_mirrorer("-a")
+
+        mirrorer.mirror("foo>=2.0")
+        mirrorer.mirror("foo>=1.0")
+
+        assert processed == [
+            "foo-2.5.tar.gz",
+            "foo-2.0.tar.gz",
+            "foo-2.5.tar.gz",
+            "foo-2.0.tar.gz",
+            "foo-1.0.tar.gz",
+        ]
+
+    def test_dependency_after_toplevel_requirement_with_all_versions_cached(
+        self,
+        make_mirrorer,
+    ):
+        mirrorer, processed, requested = make_mirrorer("-a")
+
+        mirrorer.mirror("foo")
+        mirrorer.mirror("bar")
+
+        assert requested == ["foo", "bar"]
+        assert processed == [
+            "foo-2.5.tar.gz",
+            "foo-2.0.tar.gz",
+            "foo-1.0.tar.gz",
+            "bar-1.0.tar.gz",
+        ]
+
+    def test_toplevel_requirement_after_dependency_cached(self, make_mirrorer):
+        mirrorer, processed, requested = make_mirrorer()
+
+        mirrorer.mirror("bar")
+        mirrorer.mirror("foo")
+
+        assert requested == ["bar", "foo"]
+        assert processed == ["bar-1.0.tar.gz", "foo-2.5.tar.gz"]
 
 
 class TestIsSafeFilename:

@@ -85,11 +85,18 @@ class Cache:
             # because no final release matched, but req selects a final
             # release if one satisfies it.
             return False
-        # A simple-case requirement selects the latest acceptable version
-        # above its lower bound. Every version newer than the recorded one
-        # that satisfies req also satisfied the requirement that selected
-        # it, so if the recorded version satisfies req, it is also the latest
-        # acceptable version for req.
+        # Mirrorer calls check() only for requirements that select one
+        # version, which is the latest version that satisfies the requirement
+        # and passes the other filters, such as the environment filter.
+        # Let V be the recorded version and R the earlier requirement that
+        # selected V.
+        # R is a simple-case requirement without an upper bound, so every
+        # version > V satisfies R.
+        # No version > V passes the other filters, because R would have
+        # selected it otherwise.
+        # If V satisfies req, req therefore selects V too.
+        # For example, if foo>=1.0 selected 2.5, then foo>=2.0 also selects
+        # 2.5.
         return req.specifier.contains(version, prereleases=True)
 
     def add(self, req: Requirement, version: Version | None = None):
