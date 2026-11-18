@@ -9,6 +9,7 @@ import os
 import urllib.error
 
 import packaging.requirements
+import packaging.utils
 import packaging.version
 import pytest
 
@@ -394,6 +395,140 @@ class TestFilterFiles:
         )
 
         assert self.extract_versions(filtered_files) == expected_versions
+
+    @pytest.mark.parametrize(
+        "filename",
+        [
+            # platform-specific sdist
+            "expandvars-0.6.0.macosx-10.15-x86_64.tar.gz",
+            # sdist without a version
+            "sample_package.tar.gz",
+            # wheel with too few name components
+            "sample_package-1.0.0-py3-none.whl",
+            # wheel with a non-PEP 440 version
+            "sample_package-1.0.0.foo-py3-none-any.whl",
+        ],
+        ids=[
+            "sdist_legacy_platform_version",
+            "sdist_missing_version",
+            "wheel_missing_tags",
+            "wheel_invalid_version",
+        ],
+    )
+    def test_parse_version_skips_invalid_filenames(
+        self,
+        make_mirrorer,
+        filename,
+        capsys,
+    ):
+        """
+        A file whose name packaging cannot parse is dropped without output,
+        and the files before and after it are still parsed. Any output
+        means the generic exception handler caught the error.
+        """
+        mirrorer = make_mirrorer(mirror_all_versions=True)
+        before = self.make_file("sample_package-1.0.0.tar.gz")
+        invalid = self.make_file(filename)
+        after = self.make_file("sample_package-2.0.0-py3-none-any.whl")
+
+        # pylint: disable=W0212
+        files = mirrorer._parse_version_and_tags_in_files(  # noqa: SLF001
+            [before, invalid, after],
+        )
+        # pylint: disable=W0212
+        files = mirrorer._filter_files_for_valid_versions(files)  # noqa: SLF001
+
+        assert files == [before, after]
+        assert before["version"] == packaging.version.Version("1.0.0")
+        assert after["version"] == packaging.version.Version("2.0.0")
+        assert "version" not in invalid
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert captured.err == ""
+
+    def test_parse_version_skips_invalid_version_quietly(
+        self,
+        make_mirrorer,
+        monkeypatch,
+        capsys,
+    ):
+        """
+        A bare InvalidVersion drops the file without output, and the files
+        before and after it are still parsed. The parser is patched because
+        packaging 24 wraps InvalidVersion in InvalidSdistFilename, so no
+        real filename raises it.
+        """
+
+        def raise_invalid_version(_filename):
+            msg = "Invalid version: 'x'"
+            raise packaging.version.InvalidVersion(msg)
+
+        monkeypatch.setattr(
+            packaging.utils,
+            "parse_sdist_filename",
+            raise_invalid_version,
+        )
+        mirrorer = make_mirrorer(mirror_all_versions=True)
+        before = self.make_file("sample_package-1.0.0-py3-none-any.whl")
+        sdist = self.make_file("sample_package-1.5.0.tar.gz")
+        after = self.make_file("sample_package-2.0.0-py3-none-any.whl")
+
+        # pylint: disable=W0212
+        files = mirrorer._parse_version_and_tags_in_files(  # noqa: SLF001
+            [before, sdist, after],
+        )
+        # pylint: disable=W0212
+        files = mirrorer._filter_files_for_valid_versions(files)  # noqa: SLF001
+
+        assert files == [before, after]
+        assert before["version"] == packaging.version.Version("1.0.0")
+        assert after["version"] == packaging.version.Version("2.0.0")
+        assert "version" not in sdist
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert captured.err == ""
+
+    def test_parse_version_reports_unexpected_exception(
+        self,
+        make_mirrorer,
+        monkeypatch,
+        capsys,
+    ):
+        """
+        An unexpected exception from the filename parser drops the file,
+        prints "Skipping file" and a traceback, and the files before and
+        after it are still parsed.
+        """
+
+        def raise_value_error(_filename):
+            msg = "unexpected"
+            raise ValueError(msg)
+
+        monkeypatch.setattr(
+            packaging.utils,
+            "parse_sdist_filename",
+            raise_value_error,
+        )
+        mirrorer = make_mirrorer(mirror_all_versions=True)
+        before = self.make_file("sample_package-1.0.0-py3-none-any.whl")
+        sdist = self.make_file("sample_package-1.5.0.tar.gz")
+        after = self.make_file("sample_package-2.0.0-py3-none-any.whl")
+
+        # pylint: disable=W0212
+        files = mirrorer._parse_version_and_tags_in_files(  # noqa: SLF001
+            [before, sdist, after],
+        )
+        # pylint: disable=W0212
+        files = mirrorer._filter_files_for_valid_versions(files)  # noqa: SLF001
+
+        assert files == [before, after]
+        assert before["version"] == packaging.version.Version("1.0.0")
+        assert after["version"] == packaging.version.Version("2.0.0")
+        assert "version" not in sdist
+        captured = capsys.readouterr()
+        assert "Skipping file sample_package-1.5.0.tar.gz" in captured.out
+        assert "Traceback" in captured.err
+        assert "ValueError: unexpected" in captured.err
 
     def test_skipping(self, make_mirrorer):
         """Test that requirement not skipping."""
