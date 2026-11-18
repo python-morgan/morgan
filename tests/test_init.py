@@ -1353,3 +1353,57 @@ class TestMirrorConfigValidation:
 
         with pytest.raises(ValueError, match=r"no \[requirements\] section"):
             morgan.mirror(args)
+
+
+class TestMirrorRequirementLines:
+    def test_mirror_splits_requirement_lines(self, tmp_path, monkeypatch):
+        config_path = os.path.join(tmp_path, "morgan.ini")
+        with open(config_path, "w", encoding="utf-8") as f:
+            f.write(
+                """
+                [env.test_env]
+                python_version = 3.10
+                sys_platform = linux
+                platform_machine = x86_64
+
+                [requirements]
+                foo =
+                  ==2.0
+                  ==2.1
+                qux = ==1
+                qux = ==2
+                bar = ==1.0
+                baz =
+                """,
+            )
+        args = argparse.Namespace(
+            index_path=str(tmp_path),
+            index_url=PYPI_ADDRESS,
+            config=config_path,
+            mirror_all_versions=False,
+            package_type_regex=r"(whl|zip|tar\.gz)",
+            mirror_all_wheels=False,
+            target_url=None,
+            use_pypi_metadata=False,
+            skip_server_copy=True,
+        )
+        recorded = []
+
+        def fake_mirror(_self, requirement_string):
+            recorded.append(requirement_string)
+
+        monkeypatch.setattr(Mirrorer, "mirror", fake_mirror)
+
+        morgan.mirror(args)
+
+        assert recorded == [
+            "foo==2.0",
+            "foo==2.1",
+            "qux==1",
+            "qux==2",
+            "bar==1.0",
+            "baz",
+        ], (
+            "mirror() must be called once for every non-empty line, and not "
+            "for an empty line"
+        )
