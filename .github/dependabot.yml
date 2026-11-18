@@ -10,3 +10,11 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+
+  # Enable version updates for the Python dependencies in pyproject.toml
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # only touch a constraint when the new release falls outside it
+    versioning-strategy: "increase-if-necessary"
