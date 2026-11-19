@@ -79,6 +79,10 @@ class Mirrorer:
         self.envs = {}
         self._supported_pyversions = []
         self._supported_platforms = []
+
+        # do not check dependencies?
+        self.no_deps = self.config.getboolean("local", "no-deps", fallback=False)
+
         for key in self.config:
             m = re.fullmatch(r"env\.(.+)", key)
             if m:
@@ -123,7 +127,7 @@ class Mirrorer:
             print(f"\tError: {err}")
             deps = None
 
-        if deps is None:
+        if self.no_deps or deps is None:
             return
 
         while len(deps) > 0:
