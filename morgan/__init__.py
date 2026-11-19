@@ -107,10 +107,14 @@ class Mirrorer:
         self._processed_pkgs = Cache()
         self.target_registry: Registry = self._find_target_registry(args)
         self.use_pypi_metadata: bool = args.use_pypi_metadata or False
+        # Library callers build the Namespace by hand, so no_deps may be missing.
+        self.no_deps: bool = getattr(args, "no_deps", False)
 
     def mirror(self, requirement_string: str):
         """
         Mirror a package according to a PEP 508-compliant requirement string.
+        Dependencies of the package are mirrored recursively, unless no_deps
+        is set.
         """
 
         requirement = parse_requirement(requirement_string)
@@ -606,6 +610,13 @@ class Mirrorer:
         ):
             self._download_file(fileinfo, filepath, hashalg)
 
+        if self.no_deps:
+            if not self.use_pypi_metadata:
+                # The result is not needed, but the call writes the .metadata
+                # file that the server serves to clients.
+                self._extract_metadata_from_file(filepath)
+            return None
+
         if self.use_pypi_metadata:
             pkg_metadata = self._extract_metadata_from_pypi(
                 requirement.name,
@@ -827,8 +838,13 @@ def mirror(args: argparse.Namespace):
     if not m.config.has_section("requirements"):
         msg = f"Config file {args.config} has no [requirements] section"
         raise ValueError(msg)
+    if m.no_deps:
+        print("Not following dependencies (--no-deps)")
     for package in m.config["requirements"]:
-        reqs = m.config["requirements"][package].splitlines()
+        # The multiline form below starts with a blank line, which would
+        # mirror the latest version of the package.
+        reqs = [req.strip() for req in m.config["requirements"][package].splitlines()]
+        reqs = [req for req in reqs if req]
         if not reqs:
             # empty requirements
             # morgan =
@@ -840,7 +856,7 @@ def mirror(args: argparse.Namespace):
             #   >=2
             #   [brotli]  # noqa: ERA001
             for req in reqs:
-                m.mirror(f"{package}{req.strip()}")
+                m.mirror(f"{package}{req}")
 
     if not args.skip_server_copy:
         m.copy_server()
@@ -956,6 +972,17 @@ def main():  # noqa: C901
             "Enabling this option can result in fewer dependencies being pulled in, "
             "as some dependencies declared in pyproject.toml (e.g. build-system "
             "dependencies like poetry) are not considered package dependencies by PyPI."
+        ),
+    )
+    parser.add_argument(
+        "--no-deps",
+        dest="no_deps",
+        action="store_true",
+        help=(
+            "Only mirror the packages listed in the [requirements] section and do "
+            "not follow their dependencies (including extras and build "
+            "requirements). Use this when the requirements are a complete, pinned "
+            "set, e.g. generated from a lock file."
         ),
     )
 
