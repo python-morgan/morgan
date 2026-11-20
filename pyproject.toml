@@ -45,7 +45,7 @@ classifiers = [
 [project.optional-dependencies]
 test = ["pytest>=7.3.2"]
 lint = [
-    "ruff~=0.15.0",
+    "ruff~=0.17.5",
     "mypy~=1.19.1",
     "importlib-metadata", # required by mypy for all Python versions
 ]
