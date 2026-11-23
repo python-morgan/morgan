@@ -14,7 +14,7 @@ keywords = [ "pypi", "mirror", "packages", "pypi-mirror" ]
 readme = "README.md"
 requires-python = ">=3.7"
 dependencies = [
-    "packaging~=24.0; python_version == '3.7'",
+    "packaging~=24.0; python_version < '3.8'",
     "packaging~=26.2; python_version >= '3.8'",
     "importlib-metadata~=4.12.0; python_version < '3.8'",
     "tomli~=2.0.1",
