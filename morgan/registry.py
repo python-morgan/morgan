@@ -1,3 +1,6 @@
+# Copyright 2025 RISE FX GmbH
+# SPDX-License-Identifier: Apache-2.0
+
 """Package registry functionality for target package registries.
 
 This module provides abstractions for working with different target package registries,
