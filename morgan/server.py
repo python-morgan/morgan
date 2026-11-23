@@ -1,3 +1,6 @@
+# Copyright 2022 Ido Perlmuter
+# SPDX-License-Identifier: Apache-2.0
+
 # ruff: noqa: FBT001, FBT002, PERF401, PLR2004, PLW0602, PLW0603, S104
 # FBT: allow boolean as positional argument
 # PERF401: allow manual list comprehensions

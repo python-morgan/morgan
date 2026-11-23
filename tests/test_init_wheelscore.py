@@ -1,3 +1,6 @@
+# Copyright 2025 RISE FX GmbH
+# SPDX-License-Identifier: Apache-2.0
+
 """Tests for the _calculate_scores_for_wheel() method in morgan."""
 
 # pylint: disable=missing-function-docstring,missing-class-docstring,protected-access

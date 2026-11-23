@@ -1,3 +1,6 @@
+# Copyright 2026 RISE FX GmbH
+# SPDX-License-Identifier: Apache-2.0
+
 # pylint: disable=missing-function-docstring,missing-class-docstring,missing-module-docstring
 import importlib
 import platform
