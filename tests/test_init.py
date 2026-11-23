@@ -1386,6 +1386,7 @@ class TestMirrorRequirementLines:
             mirror_all_versions=False,
             package_type_regex=r"(whl|zip|tar\.gz)",
             mirror_all_wheels=False,
+            prerelease=False,
             target_url=None,
             use_pypi_metadata=False,
             skip_server_copy=True,
