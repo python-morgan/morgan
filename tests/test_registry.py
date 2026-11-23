@@ -153,6 +153,7 @@ class TestLocalRegistry:
     )
     def test_has_package_with_matching_hash(  # noqa: PLR0913
         self,
+        *,
         local_registry: LocalRegistry,
         mock_file_hashing,
         create_package_file,
