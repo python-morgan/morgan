@@ -391,7 +391,7 @@ class PyPIMetadataParser(MetadataParser):
 
         url = f"https://pypi.org/pypi/{self.package_name}/{self.version_str}/json"
 
-        request = urllib.request.Request(  # noqa: S310
+        request = urllib.request.Request(
             url,
             headers={
                 "Accept": "application/json",
